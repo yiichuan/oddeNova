@@ -2,19 +2,20 @@
 import { act, createElement, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useHummingInput } from '../useHummingInput';
+import { useHummingInput, type HummingInstructionSender } from '../useHummingInput';
 import { hummingAttachment, hummingDraft } from '../../lib/__tests__/fixtures/humming';
 
 const mocks = vi.hoisted(() => ({
   getHummingDraft: vi.fn(), saveHummingDraft: vi.fn(), clearHummingDraft: vi.fn(),
+  getEarlierHummingDrafts: vi.fn(async () => []),
   discardHummingDraft: vi.fn(), getHummingAsset: vi.fn(),
   replaceHummingDraftIfPersistent: vi.fn(), startHummingRecording: vi.fn(),
-  decodeHummingRecording: vi.fn(), transcribeHumming: vi.fn(),
+  transcribeHumming: vi.fn(), understandHumming: vi.fn(),
 }));
+vi.mock('../../services/music-understanding', () => ({ understandHumming: mocks.understandHumming }));
 vi.mock('../../lib/humming-storage', () => mocks);
 vi.mock('../../lib/session-storage', () => ({ isSessionStoragePersistent: () => true }));
 vi.mock('../../services/humming-recorder', () => ({ startHummingRecording: mocks.startHummingRecording }));
-vi.mock('../../services/humming-audio', () => ({ decodeHummingRecording: mocks.decodeHummingRecording }));
 vi.mock('../../services/humming-transcriber', async (original) => ({
   ...await original<typeof import('../../services/humming-transcriber')>(),
   transcribeHumming: mocks.transcribeHumming,
@@ -26,7 +27,7 @@ const roots: Root[] = [];
 async function renderHook() {
   let hook: ReturnType<typeof useHummingInput>;
   let sessionId: string | null = 'source';
-  const onSend = vi.fn(() => true);
+  const onSend = vi.fn<HummingInstructionSender>(() => true);
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -79,13 +80,13 @@ function configureRecorderSession() {
 describe('useHummingInput resets', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.understandHumming.mockReset().mockRejectedValue(new Error('sign_in_required'));
     mocks.getHummingDraft.mockResolvedValue(hummingDraft());
     mocks.clearHummingDraft.mockResolvedValue(undefined);
     mocks.discardHummingDraft.mockResolvedValue(undefined);
     mocks.replaceHummingDraftIfPersistent.mockResolvedValue({ persistent: true });
-    mocks.decodeHummingRecording.mockResolvedValue({ samples: new Float32Array(8), sampleRate: 22050 });
     const attachment = hummingAttachment();
-    mocks.transcribeHumming.mockResolvedValue({ result: {
+    mocks.transcribeHumming.mockResolvedValue({ modelVersion: 'deepseek-flash', modelRhythm: { bpm: null, timeSignature: null }, result: {
       trimStartSeconds: attachment.trimStartSeconds,
       melodyDurationSeconds: attachment.melodyDurationSeconds,
       notes: attachment.transcription.notes, warnings: [],
@@ -109,19 +110,123 @@ describe('useHummingInput resets', () => {
     expect(mocks.getHummingDraft).toHaveBeenCalledTimes(1);
   });
 
-  it('analyzes without sending and reuses the result when submitted', async () => {
+  it('exposes the sent text and recording before analysis resolves and restores the draft on cancel', async () => {
+    mocks.transcribeHumming.mockImplementationOnce((_blob, signal: AbortSignal, onTool) => {
+      onTool();
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    const { getHook, onSend } = await renderHook();
+    let submission!: Promise<boolean>;
+    act(() => { submission = getHook().submit('add a bass line', 'text'); });
+
+    expect(getHook().pendingSubmission).toMatchObject({
+      text: 'add a bass line',
+      takes: [{ audioUrl: 'blob:preview' }],
+    });
+    expect(getHook().waveformToolCalled).toBe(true);
+    expect(onSend).not.toHaveBeenCalled();
+
+    await act(async () => {
+      getHook().cancelTranscription();
+      expect(await submission).toBe(false);
+    });
+    expect(getHook().pendingSubmission).toBeNull();
+    expect(getHook().draft).not.toBeNull();
+  });
+
+  it('keeps earlier recordings and submits the takes in recording order', async () => {
+    const recorder = configureRecorderSession();
+    mocks.saveHummingDraft.mockResolvedValue({ persistent: true });
+    mocks.understandHumming
+      .mockResolvedValueOnce({ melodyStyle: 'Folk' })
+      .mockImplementationOnce(() => new Promise(() => {}));
+    const { getHook, onSend } = await renderHook();
+    const first = getHook().draft!;
+    expect(getHook().canRecord).toBe(true);
+    await act(async () => { getHook().startRecording(); });
+    act(() => getHook().stopRecording());
+    await act(async () => { recorder.finish(); });
+    const second = getHook().draft!;
+    expect(second.id).not.toBe(first.id);
+    expect(getHook().earlierTakes.map(take => take.draft.id)).toEqual([first.id]);
+    expect(mocks.saveHummingDraft).toHaveBeenCalledWith(second, true);
+
+    await act(async () => { expect(await getHook().submit('', 'text')).toBe(true); });
+    expect(mocks.understandHumming).toHaveBeenCalledTimes(2);
+    expect(mocks.understandHumming.mock.invocationCallOrder[1])
+      .toBeLessThan(mocks.transcribeHumming.mock.invocationCallOrder[0]);
+    expect(mocks.understandHumming.mock.calls[1][2].aborted).toBe(true);
+    expect(onSend).toHaveBeenCalledWith('', 'text', expect.objectContaining({
+      id: first.id,
+      understanding: { melodyStyle: 'Folk' },
+      additionalTakes: [expect.objectContaining({ id: second.id })],
+    }));
+    expect(onSend.mock.calls[0][2].additionalTakes?.[0].understanding).toBeUndefined();
+    expect(getHook().earlierTakes).toEqual([]);
+  });
+
+  it('retries saving an unsaved take when the user sends the attachment', async () => {
+    const recorder = configureRecorderSession();
+    mocks.saveHummingDraft
+      .mockResolvedValueOnce({ persistent: false })
+      .mockResolvedValueOnce({ persistent: true });
+    const { getHook, onSend } = await renderHook();
+    act(() => getHook().discard());
+    await act(async () => { getHook().startRecording(); });
+    act(() => getHook().stopRecording());
+    await act(async () => { recorder.finish(); });
+    expect(getHook().isPersistent).toBe(false);
+
+    await act(async () => { expect(await getHook().submit('', 'text')).toBe(true); });
+    expect(mocks.saveHummingDraft).toHaveBeenCalledTimes(2);
+    expect(onSend).toHaveBeenCalledOnce();
+  });
+
+  it('keeps note transcription independent from understanding and reuses notes when sending', async () => {
+    const reference = { melodyStyle: 'Folk with plucked strings' };
+    mocks.understandHumming.mockResolvedValueOnce(reference);
     const { getHook, onSend } = await renderHook();
     await act(async () => { expect(await getHook().analyze()).toBe(true); });
-    expect(onSend).not.toHaveBeenCalled();
-    expect(getHook().analysis?.transcription.notes[0].pitchMidi).toBe(60);
-    await act(async () => { expect(await getHook().submit('', 'text')).toBe(true); });
+    expect(mocks.understandHumming).not.toHaveBeenCalled();
+    const analysis = getHook().analysis;
+    expect(analysis?.transcription.engine).toBe('audio-llm');
+
+    await act(async () => { await getHook().understanding.analyze(); });
+    expect(getHook().analysis).toBe(analysis);
     expect(mocks.transcribeHumming).toHaveBeenCalledOnce();
-    expect(onSend).toHaveBeenCalledOnce();
+
+    await act(async () => { expect(await getHook().submit('', 'text')).toBe(true); });
+    expect(mocks.understandHumming).toHaveBeenCalledOnce();
+    expect(mocks.transcribeHumming).toHaveBeenCalledOnce();
+    expect(onSend).toHaveBeenCalledWith('', 'text', { ...analysis, understanding: reference });
+  });
+
+  it('allows understanding and local analysis to run and cancel independently', async () => {
+    let complete!: (result: { melodyStyle: string }) => void;
+    mocks.understandHumming.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const { getHook, onSend } = await renderHook();
+    let understanding!: Promise<unknown>;
+    act(() => { understanding = getHook().understanding.analyze(); });
+    expect(getHook().understanding.pending).toBe(true);
+    expect(mocks.transcribeHumming).not.toHaveBeenCalled();
+
+    await act(async () => { expect(await getHook().analyze()).toBe(true); });
+    expect(getHook().understanding.pending).toBe(true);
+    const analysis = getHook().analysis;
+    act(() => getHook().understanding.cancel());
+    expect(mocks.understandHumming.mock.calls[0][2].aborted).toBe(true);
+    await act(async () => { complete({ melodyStyle: 'Folk' }); await understanding; });
+    expect(getHook().analysis).toBe(analysis);
+    expect(getHook().understanding.result).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
   });
 
   it('can record again after sending a draft in the same session', async () => {
     const { getHook, onSend } = await renderHook();
     await act(async () => { expect(await getHook().submit('', 'text')).toBe(true); });
+    expect(mocks.understandHumming).toHaveBeenCalledOnce();
     expect(onSend).toHaveBeenCalledOnce();
     expect(mocks.clearHummingDraft).toHaveBeenCalledWith('guest', 'source');
     expect(getHook().draft).toBeNull();
@@ -129,7 +234,7 @@ describe('useHummingInput resets', () => {
   });
 
   it('retains the draft and does not send when transcription fails schema validation', async () => {
-    mocks.transcribeHumming.mockResolvedValue({ result: {
+    mocks.transcribeHumming.mockResolvedValue({ modelVersion: 'deepseek-flash', modelRhythm: { bpm: null, timeSignature: null }, result: {
       trimStartSeconds: 0, melodyDurationSeconds: 1,
       notes: [{ pitchMidi: 60, startSeconds: 0, durationSeconds: 0.5, pitchBendsCents: Array(25).fill(1) }],
       warnings: [],

@@ -39,8 +39,8 @@ describe('registerPunchcardBlur', () => {
       filter: 'none',
     };
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
-      .mockImplementationOnce(() => layerContext as unknown as CanvasRenderingContext2D)
-      .mockImplementationOnce(() => outputContext as unknown as CanvasRenderingContext2D);
+      .mockImplementationOnce(() => layerContext as unknown as ReturnType<HTMLCanvasElement['getContext']>)
+      .mockImplementationOnce(() => outputContext as unknown as ReturnType<HTMLCanvasElement['getContext']>);
 
     const painter = vi.fn() as unknown as TestPainter;
     const options = { cycles: 3 };

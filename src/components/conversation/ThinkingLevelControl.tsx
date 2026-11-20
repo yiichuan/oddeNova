@@ -311,7 +311,7 @@ export default function ThinkingLevelControl({
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-controls={POPOVER_ID}
-        className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] text-text-muted transition duration-200 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
+        className="inline-flex h-7 items-center gap-1 rounded-full text-[12px] text-text-muted transition duration-200 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
         title={t('thinkingLevel')}
         aria-label={t('thinkingLevel')}
       >

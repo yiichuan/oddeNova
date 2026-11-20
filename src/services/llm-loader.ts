@@ -1,3 +1,4 @@
+import type { HummingAttachment } from '../types/humming';
 import type { ImageAttachment } from '../lib/image-attachments';
 // ===========================================================================
 // Lazy entry point for the heavy LLM runtime (services/llm.ts).
@@ -66,6 +67,7 @@ export async function runAgent(
   signal?: AbortSignal,
   conversationHistory?: ConversationTurn[],
   images?: ImageAttachment[],
+  humming?: HummingAttachment,
 ): Promise<RunAgentResult> {
   const module = await loadRuntime();
   // The import itself cannot be aborted; make sure a request cancelled while
@@ -73,7 +75,9 @@ export async function runAgent(
   if (signal?.aborted) {
     throw new DOMException('Aborted', 'AbortError');
   }
-  return images?.length
+  return humming
+    ? module.runAgent(instruction, currentCode, onProgress, moodContext, signal, conversationHistory, images, humming)
+    : images?.length
     ? module.runAgent(instruction, currentCode, onProgress, moodContext, signal, conversationHistory, images)
     : module.runAgent(instruction, currentCode, onProgress, moodContext, signal, conversationHistory);
 }

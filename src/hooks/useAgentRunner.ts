@@ -21,7 +21,8 @@ import { t, zh } from '../lib/i18n';
 import type { StrudelState } from '../services/strudel';
 import { analyticsContext, analyticsError, analyticsId, rememberAnalyticsTurn, type AnalyticsContext } from '../lib/analytics-context';
 import { isAbortError } from '../lib/errors';
-import { formatHummingContext } from '../lib/humming-context';
+import { hummingTakes, projectHummingAttachment } from '../lib/humming-transfer';
+import { formatHummingContext, hasHummingWaveformReport } from '../lib/humming-context';
 import type { HummingAttachment } from '../types/humming';
 
 // ── Pure agent-turn logic (testable in isolation) ────────────────────────────
@@ -144,9 +145,11 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
   if (!input.skipAddMessage) {
     const insertion = input.selectedChoice
       ? deps.addUserMessage(input.text, undefined, true)
-      : input.images?.length
-        ? deps.addUserMessage(input.text, input.images)
-        : deps.addUserMessage(input.text, undefined, undefined, input.humming);
+      : input.humming
+        ? deps.addUserMessage(input.text, input.images, undefined, input.humming)
+        : input.images?.length
+          ? deps.addUserMessage(input.text, input.images)
+          : deps.addUserMessage(input.text);
     if (insertion?.isFirstUserMessage) input.onFirstUserMessage?.(insertion.id);
   }
 
@@ -181,8 +184,19 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
 
   try {
     const onProgress = deps.makeProgressHandler(sessionId);
+    const humming = projectHummingAttachment(input.humming) ?? undefined;
+    const takes = hummingTakes(humming);
+    if (!input.skipAddMessage) {
+      const missingStyles = takes
+        .flatMap((take, index) => take.understanding ? [] : [String(index + 1).padStart(2, '0')]);
+      if (missingStyles.length) {
+        const suffix = takes.length > 1 ? ` (${missingStyles.join(', ')})` : '';
+        onProgress({ kind: 'warn', message: `${t('hummingStyleAnalysisFailed')}${suffix}` });
+      }
+    }
+    const waveformAttachment = hasHummingWaveformReport(humming) ? humming : undefined;
     const result = await deps.runAgent(
-      formatHummingContext(input.text, input.humming),
+      formatHummingContext(input.text, humming, Boolean(waveformAttachment)),
       beforeCode,
       (event) => {
         if (!ownsTurn()) return;
@@ -195,6 +209,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       signal,
       history,
       input.images,
+      ...(waveformAttachment ? [waveformAttachment] as const : []),
     );
     iterations = result.iterations;
     terminationReason = result.terminationReason ?? (result.committed ? 'committed' : 'no_commit');

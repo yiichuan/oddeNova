@@ -8,6 +8,7 @@ import {
 } from './session-storage';
 import type { Session } from '../hooks/useSessions';
 import type { LocalHummingAsset, LocalHummingDraft } from '../types/humming';
+import { hummingTakes } from './humming-transfer';
 
 interface StoredHummingDraft {
   ownerKey: string;
@@ -15,7 +16,15 @@ interface StoredHummingDraft {
   id: string;
   durationSeconds: number;
   createdAt: number;
+  earlier?: StoredHummingDraft[];
 }
+function referencesFor(draft?: StoredHummingDraft): StoredHummingDraft[] {
+  if (!draft) return [];
+  const { earlier, ...latest } = draft;
+  return [...(earlier ?? []), latest];
+}
+const earlierReferences = (previous: StoredHummingDraft | undefined, id: string) =>
+  previous?.id === id ? previous.earlier : referencesFor(previous).filter(take => take.id !== id);
 
 const memoryAssets = new Map<string, LocalHummingAsset>();
 const memoryDrafts = new Map<string, StoredHummingDraft>();
@@ -28,6 +37,7 @@ export interface SaveHummingDraftResult {
 
 export async function saveHummingDraft(
   draft: LocalHummingDraft,
+  append = false,
 ): Promise<SaveHummingDraftResult> {
   await openDB();
   const db = getStorageDb();
@@ -41,7 +51,9 @@ export async function saveHummingDraft(
 
   if (!db) {
     memoryAssets.set(assetKey(draft.ownerKey, draft.id), draft);
-    memoryDrafts.set(draftKey(draft.ownerKey, draft.sessionId), reference);
+    const key = draftKey(draft.ownerKey, draft.sessionId);
+    if (append) reference.earlier = earlierReferences(memoryDrafts.get(key), draft.id);
+    memoryDrafts.set(key, reference);
     return { persistent: false };
   }
 
@@ -49,6 +61,11 @@ export async function saveHummingDraft(
     [HUMMING_ASSET_STORE_NAME, HUMMING_DRAFT_STORE_NAME],
     'readwrite',
   );
+  const drafts = transaction.objectStore(HUMMING_DRAFT_STORE_NAME);
+  if (append) {
+    const previous = await drafts.get([draft.ownerKey, draft.sessionId]) as StoredHummingDraft | undefined;
+    reference.earlier = earlierReferences(previous, draft.id);
+  }
   await Promise.all([
     transaction.objectStore(HUMMING_ASSET_STORE_NAME).put({
       ownerKey: draft.ownerKey,
@@ -58,7 +75,7 @@ export async function saveHummingDraft(
       mimeType: draft.mimeType,
       createdAt: draft.createdAt,
     }),
-    transaction.objectStore(HUMMING_DRAFT_STORE_NAME).put(reference),
+    drafts.put(reference),
     transaction.done,
   ]);
   return { persistent: isSessionStoragePersistent() };
@@ -102,6 +119,7 @@ export async function replaceHummingDraftIfPersistent(
       id: draft.id,
       durationSeconds: draft.durationSeconds,
       createdAt: draft.createdAt,
+      earlier: previous?.earlier,
     };
     const writes: Promise<unknown>[] = [
       assets.put({
@@ -118,12 +136,12 @@ export async function replaceHummingDraftIfPersistent(
     if (previous && previous.id !== draft.id) {
       const referencedByMessage = sessions.some((session) => (
         session.ownerKey === draft.ownerKey
-        && session.messages.some((message) => message.humming?.id === previous.id)
+        && session.messages.some((message) => hummingTakes(message.humming).some(take => take.id === previous.id))
       ));
       const referencedByAnotherDraft = storedDrafts.some((stored) => (
         stored.ownerKey === draft.ownerKey
         && stored.sessionId !== draft.sessionId
-        && stored.id === previous.id
+        && referencesFor(stored).some(take => take.id === previous.id)
       ));
       if (!referencedByMessage && !referencedByAnotherDraft) {
         writes.push(assets.delete([draft.ownerKey, previous.id]));
@@ -168,6 +186,19 @@ export async function getHummingDraft(
   return asset ? { ...asset, sessionId, durationSeconds: reference.durationSeconds } : null;
 }
 
+export async function getEarlierHummingDrafts(ownerKey: string, sessionId: string): Promise<LocalHummingDraft[]> {
+  await openDB();
+  const db = getStorageDb();
+  const reference = db
+    ? await db.get(HUMMING_DRAFT_STORE_NAME, [ownerKey, sessionId]) as StoredHummingDraft | undefined
+    : memoryDrafts.get(draftKey(ownerKey, sessionId));
+  const takes = await Promise.all((reference?.earlier ?? []).map(async take => {
+    const asset = await getHummingAsset(ownerKey, take.id);
+    return asset ? { ...asset, sessionId, durationSeconds: take.durationSeconds } : null;
+  }));
+  return takes.filter(take => take !== null);
+}
+
 export async function getHummingAsset(
   ownerKey: string,
   id: string,
@@ -188,11 +219,13 @@ function survivingReferences(
   for (const session of sessions) {
     if (session.id === deletedSessionId) continue;
     for (const message of session.messages) {
-      if (message.humming) references.set(message.humming.id, session.id);
+      for (const take of hummingTakes(message.humming)) references.set(take.id, session.id);
     }
   }
   for (const draft of drafts) {
-    if (draft.sessionId !== deletedSessionId) references.set(draft.id, draft.sessionId);
+    if (draft.sessionId !== deletedSessionId) {
+      for (const take of referencesFor(draft)) references.set(take.id, draft.sessionId);
+    }
   }
   return references;
 }
@@ -214,7 +247,7 @@ export async function deleteHummingDataForSession(
     );
     memoryDrafts.delete(draftKey(ownerKey, sessionId));
     for (const [key, asset] of memoryAssets) {
-      if (asset.ownerKey !== ownerKey || (asset.sessionId !== sessionId && asset.id !== reference?.id)) continue;
+      if (asset.ownerKey !== ownerKey || (asset.sessionId !== sessionId && !referencesFor(reference).some(take => take.id === asset.id))) continue;
       const nextSessionId = retained.get(asset.id);
       if (nextSessionId) memoryAssets.set(key, { ...asset, sessionId: nextSessionId });
       else memoryAssets.delete(key);
@@ -242,8 +275,9 @@ export async function deleteHummingDataForSession(
     sessionId,
   );
   const reference = ownedDrafts.find((draft) => draft.sessionId === sessionId);
-  if (reference && !ownedAssets.some((asset) => asset.id === reference.id)) {
-    const asset = await assets.get([ownerKey, reference.id]) as LocalHummingAsset | undefined;
+  for (const take of referencesFor(reference)) {
+    if (ownedAssets.some(asset => asset.id === take.id)) continue;
+    const asset = await assets.get([ownerKey, take.id]) as LocalHummingAsset | undefined;
     if (asset) ownedAssets.push(asset);
   }
   await Promise.all([
@@ -270,21 +304,24 @@ export async function clearHummingDraft(ownerKey: string, sessionId: string): Pr
 }
 
 /** Discard an unsent draft without deleting a recording still used by history. */
-export async function discardHummingDraft(ownerKey: string, sessionId: string): Promise<void> {
+export async function discardHummingDraft(ownerKey: string, sessionId: string, id?: string): Promise<void> {
   await openDB();
   const db = getStorageDb();
   if (!db) {
     const key = draftKey(ownerKey, sessionId);
     const reference = memoryDrafts.get(key);
-    memoryDrafts.delete(key);
-    if (reference) {
+    const remaining = referencesFor(reference).filter(take => id !== undefined && take.id !== id);
+    const last = remaining.pop();
+    if (last) memoryDrafts.set(key, { ...last, earlier: remaining });
+    else memoryDrafts.delete(key);
+    for (const removed of referencesFor(reference).filter(take => id === undefined || take.id === id)) {
       const retained = survivingReferences(
         [], [...memoryDrafts.values()].filter((draft) => draft.ownerKey === ownerKey), '',
       );
-      const asset = memoryAssets.get(assetKey(ownerKey, reference.id));
-      const nextSessionId = retained.get(reference.id);
-      if (asset && nextSessionId) memoryAssets.set(assetKey(ownerKey, reference.id), { ...asset, sessionId: nextSessionId });
-      else memoryAssets.delete(assetKey(ownerKey, reference.id));
+      const asset = memoryAssets.get(assetKey(ownerKey, removed.id));
+      const nextSessionId = retained.get(removed.id);
+      if (asset && nextSessionId) memoryAssets.set(assetKey(ownerKey, removed.id), { ...asset, sessionId: nextSessionId });
+      else memoryAssets.delete(assetKey(ownerKey, removed.id));
     }
     return;
   }
@@ -297,22 +334,26 @@ export async function discardHummingDraft(ownerKey: string, sessionId: string): 
   const assets = transaction.objectStore(HUMMING_ASSET_STORE_NAME);
   const reference = await drafts.get([ownerKey, sessionId]) as StoredHummingDraft | undefined;
   if (reference) {
-    const [sessions, storedDrafts, asset] = await Promise.all([
+    const [sessions, storedDrafts] = await Promise.all([
       transaction.objectStore(SESSION_STORE_NAME).getAll() as Promise<(Session & { ownerKey: string })[]>,
       drafts.getAll() as Promise<StoredHummingDraft[]>,
-      assets.get([ownerKey, reference.id]) as Promise<LocalHummingAsset | undefined>,
     ]);
     const retained = survivingReferences(
       sessions.filter((session) => session.ownerKey === ownerKey),
       storedDrafts.filter((draft) => draft.ownerKey === ownerKey && draft.sessionId !== sessionId),
       '',
     );
-    const nextSessionId = retained.get(reference.id);
+    const remaining = referencesFor(reference).filter(take => id !== undefined && take.id !== id);
+    const last = remaining.pop();
+    const removals = referencesFor(reference).filter(take => id === undefined || take.id === id);
     await Promise.all([
-      drafts.delete([ownerKey, sessionId]),
-      asset && nextSessionId
-        ? assets.put({ ...asset, sessionId: nextSessionId })
-        : assets.delete([ownerKey, reference.id]),
+      last ? drafts.put({ ...last, earlier: remaining }) : drafts.delete([ownerKey, sessionId]),
+      ...removals.map(async take => {
+        const nextSessionId = retained.get(take.id);
+        if (!nextSessionId) return assets.delete([ownerKey, take.id]);
+        const asset = await assets.get([ownerKey, take.id]) as LocalHummingAsset | undefined;
+        if (asset) await assets.put({ ...asset, sessionId: nextSessionId });
+      }),
     ]);
   }
   await transaction.done;

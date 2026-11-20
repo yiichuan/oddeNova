@@ -1,65 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
-import type { MusicUnderstanding } from '../../../shared/music-understanding';
+import type { useHummingUnderstanding } from '../../hooks/useHummingUnderstanding';
 import { t } from '../../lib/i18n';
-import { understandHumming } from '../../services/music-understanding';
-import type { LocalHummingDraft } from '../../types/humming';
 
-const errorMessages: Partial<Record<string, Parameters<typeof t>[0]>> = {
-  sign_in_required: 'hummingUnderstandingSignIn',
-  not_configured: 'hummingUnderstandingUnavailable',
-  invalid_provider_url: 'hummingUnderstandingProviderUrl',
-  provider_endpoint_failed: 'hummingUnderstandingProviderUrl',
-  provider_auth_failed: 'hummingUnderstandingProviderAuth',
-  provider_rejected_audio: 'hummingUnderstandingProviderInput',
-  invalid_result: 'hummingUnderstandingInvalidResult',
-  session_check_failed: 'hummingUnderstandingSessionCheck',
-  invalid_audio: 'hummingUnderstandingInvalidAudio',
-  audio_too_large: 'hummingUnderstandingInvalidAudio',
-  rate_limited: 'hummingUnderstandingRateLimited',
-  timeout: 'hummingUnderstandingTimeout',
+type Props = ReturnType<typeof useHummingUnderstanding> & {
+  disabled?: boolean;
 };
 
-export default function HummingUnderstanding({ draft }: { draft: LocalHummingDraft }) {
-  const request = useRef<AbortController | null>(null);
-  const [pending, setPending] = useState(false);
-  const [result, setResult] = useState<MusicUnderstanding | null>(null);
-  const [error, setError] = useState<Parameters<typeof t>[0] | null>(null);
-
-  useEffect(() => () => request.current?.abort(), []);
-
-  const cancel = () => {
-    request.current?.abort();
-    request.current = null;
-    setPending(false);
-  };
-
-  const analyze = async () => {
-    if (request.current) return;
-    const controller = new AbortController();
-    request.current = controller;
-    setPending(true);
-    setError(null);
-    try {
-      const next = await understandHumming(draft.blob, draft.ownerKey, controller.signal);
-      if (!controller.signal.aborted) setResult(next);
-    } catch (cause) {
-      if (!controller.signal.aborted) {
-        const message = cause instanceof Error ? errorMessages[cause.message] : undefined;
-        setError(message ?? 'hummingUnderstandingFailed');
-      }
-    } finally {
-      if (request.current === controller) {
-        request.current = null;
-        setPending(false);
-      }
-    }
-  };
-
+export default function HummingUnderstanding({ analyze, cancel, pending, result, error, disabled }: Props) {
   return (
     <div className="min-w-0 flex-1 text-xs text-text-secondary">
       <div className="flex flex-wrap items-center gap-x-2">
-        <button type="button" onClick={() => { void analyze(); }} disabled={pending} className="rounded-md px-2 py-1 underline hover:text-text-primary disabled:opacity-50">
+        <button type="button" onClick={() => { void analyze(); }} disabled={pending || disabled} className="rounded-md px-2 py-1 underline hover:text-text-primary disabled:opacity-50">
           {t('hummingUnderstand')}
         </button>
         {pending ? (
@@ -75,21 +26,9 @@ export default function HummingUnderstanding({ draft }: { draft: LocalHummingDra
         ) : <span className="text-text-muted">{t('hummingUnderstandingUpload')}</span>}
       </div>
       {error && <p role="alert" className="mt-1 text-error">{t(error)}</p>}
-      {result && 'summary' in result && (
-        <p aria-label={t('hummingUnderstandingResult')} className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap break-words border-t border-border pt-2">
-          {result.summary}
-        </p>
-      )}
-      {result && 'melody' in result && (
+      {result && (
         <dl aria-label={t('hummingUnderstandingResult')} className="mt-2 max-h-44 space-y-2 overflow-y-auto break-words border-t border-border pt-2">
-          <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingMelody')}</dt><dd>{result.melody}</dd></div>
-          {result.notes && <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingNotes')}</dt><dd>{result.notes}</dd></div>}
-          {result.bpm && <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingBpm')}</dt><dd>{result.bpm}</dd></div>}
-          {result.timeSignature && <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingTimeSignature')}</dt><dd>{result.timeSignature}</dd></div>}
-          {result.harmony && <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingHarmony')}</dt><dd>{result.harmony}</dd></div>}
-          <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingRhythm')}</dt><dd>{result.rhythm}</dd></div>
-          <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingSuggestions')}</dt><dd>{result.suggestions}</dd></div>
-          {result.uncertainty && <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingUncertainty')}</dt><dd>{result.uncertainty}</dd></div>}
+          <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingMelodyStyle')}</dt><dd>{result.melodyStyle}</dd></div>
         </dl>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from 'react';
-import { LoaderCircle, Pause, Play, RotateCcw } from 'lucide-react';
+import { LoaderCircle, Pause, Play, RotateCcw, Square, X } from 'lucide-react';
 import { t } from '../../lib/i18n';
 
 export interface HummingAudioPlayerProps {
@@ -8,6 +8,10 @@ export interface HummingAudioPlayerProps {
   label?: string;
   disabled?: boolean;
   loading?: boolean;
+  compact?: boolean;
+  onRemove?: () => void;
+  removeDisabled?: boolean;
+  removeLabel?: string;
 }
 
 function formatTime(seconds: number): string {
@@ -23,6 +27,7 @@ interface PlaybackState {
   mediaDuration: number;
   metadataReady: boolean;
   isPlaying: boolean;
+  isWaiting: boolean;
   isPending: boolean;
   playbackError: boolean;
 }
@@ -34,6 +39,7 @@ function initialPlaybackState(source: string | null | undefined): PlaybackState 
     mediaDuration: Number.NaN,
     metadataReady: false,
     isPlaying: false,
+    isWaiting: false,
     isPending: false,
     playbackError: false,
   };
@@ -45,12 +51,16 @@ export default function HummingAudioPlayer({
   label,
   disabled = false,
   loading = false,
+  compact = false,
+  onRemove,
+  removeDisabled = false,
+  removeLabel = t('hummingDelete'),
 }: HummingAudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const instanceId = useId();
   const [playback, setPlayback] = useState(() => initialPlaybackState(src));
   const sourcePlayback = playback.source === src ? playback : initialPlaybackState(src);
-  const { currentTime, mediaDuration, metadataReady, isPlaying, isPending, playbackError } = sourcePlayback;
+  const { currentTime, mediaDuration, metadataReady, isPlaying, isWaiting, isPending, playbackError } = sourcePlayback;
   const updatePlayback = useCallback((patch: Partial<PlaybackState>) => {
     setPlayback((current) => ({
       ...(current.source === src ? current : initialPlaybackState(src)),
@@ -78,7 +88,8 @@ export default function HummingAudioPlayer({
 
     const updateTime = () => updatePlayback({ currentTime: Number.isFinite(audio.currentTime) ? audio.currentTime : 0 });
     const updateDuration = () => updatePlayback({ mediaDuration: audio.duration });
-    const onPlaying = () => updatePlayback({ isPlaying: true, isPending: false });
+    const onPlaying = () => updatePlayback({ isPlaying: true, isWaiting: false, isPending: false });
+    const onWaiting = () => updatePlayback({ isWaiting: true });
     const onPause = () => updatePlayback({ isPlaying: false, isPending: false });
     const onEnded = () => updatePlayback({
       isPlaying: false,
@@ -95,6 +106,7 @@ export default function HummingAudioPlayer({
     audio.addEventListener('durationchange', updateDuration);
     audio.addEventListener('timeupdate', updateTime);
     audio.addEventListener('playing', onPlaying);
+    audio.addEventListener('waiting', onWaiting);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
@@ -112,6 +124,7 @@ export default function HummingAudioPlayer({
       audio.removeEventListener('durationchange', updateDuration);
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('playing', onPlaying);
+      audio.removeEventListener('waiting', onWaiting);
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
@@ -124,6 +137,11 @@ export default function HummingAudioPlayer({
     if (disabled || loading) audioRef.current?.pause();
   }, [disabled, loading]);
 
+  const rewind = (audio: HTMLAudioElement) => {
+    updatePlayback({ currentTime: 0 });
+    try { audio.currentTime = 0; } catch { /* Metadata may not be ready yet. */ }
+  };
+
   const playFromUserAction = async (reload: boolean) => {
     const audio = audioRef.current;
     if (!audio || unavailable || isPending) return;
@@ -134,11 +152,9 @@ export default function HummingAudioPlayer({
       } catch {
         // play() below reports whether the browser can recover.
       }
-      updatePlayback({ currentTime: 0 });
-      try { audio.currentTime = 0; } catch { /* Metadata may not be ready yet. */ }
-    } else if (audio.ended || (safeDuration > 0 && audio.currentTime >= safeDuration)) {
-      updatePlayback({ currentTime: 0 });
-      try { audio.currentTime = 0; } catch { /* Metadata may not be ready yet. */ }
+    }
+    if (compact || reload || audio.ended || (safeDuration > 0 && audio.currentTime >= safeDuration)) {
+      rewind(audio);
     }
 
     updatePlayback({ playbackError: false, isPending: true });
@@ -162,16 +178,80 @@ export default function HummingAudioPlayer({
     }
   };
 
+  const audioElement = (
+    <audio
+      ref={audioRef}
+      src={src ?? undefined}
+      preload="metadata"
+      className="hidden"
+      aria-hidden="true"
+      onLoadedMetadata={() => updatePlayback({ metadataReady: true })}
+    />
+  );
+
+  if (compact) {
+    const attachmentLabel = label ?? t('hummingPreview');
+    return (
+      <div className="min-w-0 max-w-full self-start" data-humming-audio-player data-chat-input-focus-ignore>
+        {audioElement}
+        <div className="group/attachment relative isolate w-fit max-w-full hover:z-10 focus-within:z-10">
+          <button
+            type="button"
+            disabled={unavailable || isPending}
+            onClick={() => {
+              if (isPlaying) {
+                const audio = audioRef.current;
+                if (audio) {
+                  audio.pause();
+                  rewind(audio);
+                }
+                updatePlayback({ isPlaying: false });
+              } else {
+                void playFromUserAction(playbackError);
+              }
+            }}
+            aria-label={`${t(isPlaying ? 'stop' : playbackError ? 'hummingRetryPlayback' : 'play')} ${attachmentLabel}`}
+            data-playing={isPlaying}
+            className="chat-input-outline humming-attachment-card flex h-7 max-w-full items-center gap-1.5 overflow-hidden rounded-md bg-conversation-surface pl-2 pr-4 text-base text-text-primary md:text-sm disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-brand-accent"
+          >
+            <span
+              aria-hidden="true"
+              data-humming-chip-progress
+              className="humming-attachment-progress pointer-events-none absolute inset-0"
+              style={{
+                animationDuration: `${safeDuration}s`,
+                animationPlayState: isWaiting ? 'paused' : 'running',
+                '--humming-fill-position': isPlaying ? progress : 0,
+              } as CSSProperties}
+            />
+            <span className="relative shrink-0" aria-hidden="true">
+              {loading || isPending ? <LoaderCircle size={12} className="animate-spin motion-reduce:animate-none" />
+                : isPlaying ? <Square size={12} fill="currentColor" />
+                  : <Play size={12} fill="currentColor" />}
+            </span>
+            <span className="relative truncate">{attachmentLabel}</span>
+          </button>
+          {onRemove && (
+            <button
+              type="button"
+              title={removeLabel}
+              aria-label={removeLabel}
+              disabled={removeDisabled}
+              onClick={onRemove}
+              className="opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:pointer-events-none group-hover/attachment:opacity-100 group-hover/attachment:pointer-events-auto group-focus-within/attachment:opacity-100 group-focus-within/attachment:pointer-events-auto absolute -right-1.5 -top-1.5 z-10 inline-flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-hover text-text-secondary shadow-sm transition-[opacity,color,background-color] hover:text-text-primary focus-visible:outline-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:text-text-muted after:absolute after:-inset-1"
+            >
+              <X size={12} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        {playbackError && <p className="mt-1 text-[11px] text-error" role="alert">{t('hummingPlaybackError')}</p>}
+      </div>
+    );
+  }
+
   return (
     <div className="humming-audio-player flex min-w-0 items-center gap-2" data-humming-audio-player>
-      <audio
-        ref={audioRef}
-        src={src ?? undefined}
-        preload="metadata"
-        className="hidden"
-        aria-hidden="true"
-        onLoadedMetadata={() => updatePlayback({ metadataReady: true })}
-      />
+      {audioElement}
       <button
         type="button"
         onClick={() => {

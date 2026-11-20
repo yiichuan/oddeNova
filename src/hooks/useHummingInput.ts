@@ -1,3 +1,5 @@
+import { parseMusicUnderstanding } from '../../shared/music-understanding';
+import { useHummingUnderstanding } from './useHummingUnderstanding';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AgentEntryPoint } from '../lib/analytics';
 import {
@@ -5,25 +7,22 @@ import {
   discardHummingDraft,
   getHummingAsset,
   getHummingDraft,
+  getEarlierHummingDrafts,
   replaceHummingDraftIfPersistent,
   saveHummingDraft,
 } from '../lib/humming-storage';
-import { projectHummingAttachment } from '../lib/humming-transfer';
+import { hummingTakes, projectHummingAttachment } from '../lib/humming-transfer';
 import { isSessionStoragePersistent } from '../lib/session-storage';
-import { decodeHummingRecording } from '../services/humming-audio';
-import {
-  HummingTranscriptionError,
-  transcribeHumming,
-} from '../services/humming-transcriber';
+import { transcribeHumming } from '../services/humming-transcriber';
+import { understandHumming } from '../services/music-understanding';
 import { startHummingRecording, type HummingRecorderSession } from '../services/humming-recorder';
 import {
-  BASIC_PITCH_MODEL_VERSION,
   HUMMING_RECORDING_LIMIT_SECONDS,
   HUMMING_MAX_ATTACHMENT_BYTES,
-  HUMMING_PREPROCESSING_VERSION,
+  HUMMING_MAX_TAKES,
+  HUMMING_AGENT_PREPROCESSING_VERSION,
   HUMMING_SCHEMA_VERSION,
   type HummingAttachment,
-  type HummingWorkerProgressStage,
   type LocalHummingDraft,
 } from '../types/humming';
 
@@ -33,25 +32,36 @@ export type HummingInstructionSender = (
   attachment: HummingAttachment,
 ) => boolean | void | Promise<boolean | void>;
 
+export interface PendingHummingSubmission {
+  id: string;
+  text: string;
+  timestamp: number;
+  takes: { id: string; durationSeconds: number; audioUrl: string | null }[];
+  takeNumber: number;
+}
+
 export interface HummingInputController {
   draft: LocalHummingDraft | null;
+  earlierTakes: DraftTake[];
   audioUrl: string | null;
   isPersistent: boolean;
   isStarting: boolean;
   isRecording: boolean;
+  recordingStream: MediaStream | null;
   recordingElapsedSeconds: number;
   isFinalizingRecording: boolean;
   isRerecording: boolean;
   isTranscribing: boolean;
+  waveformToolCalled: boolean;
+  pendingSubmission?: PendingHummingSubmission | null;
   isSavingDraft: boolean;
   isSavingReplacement: boolean;
-  progress: number;
-  progressStage: HummingWorkerProgressStage | null;
   error: string | null;
   replacementCandidate: LocalHummingDraft | null;
   replacementAudioUrl: string | null;
   canRecord: boolean;
   analysis: HummingAttachment | null;
+  understanding: ReturnType<typeof useHummingUnderstanding>;
   analyze(): Promise<boolean>;
   startRecording(): void;
   cancelRecording(): void;
@@ -61,16 +71,26 @@ export interface HummingInputController {
   retrySaveReplacement(): Promise<boolean>;
   useOriginalRecording(): void;
   retrySave(): Promise<boolean>;
-  discard(): void;
+  discard(id?: string): void;
   cancelTranscription(): void;
   restoreAttachment(attachment: HummingAttachment): Promise<boolean>;
-  submit(text: string, entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>): Promise<boolean>;
+  submit(
+    text: string,
+    entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>,
+  ): Promise<boolean>;
+}
+
+interface DraftTake {
+  draft: LocalHummingDraft;
+  audioUrl: string;
+  isPersistent: boolean;
 }
 
 interface HummingInputState {
   scopeKey: string;
   loaded: boolean;
   draft: LocalHummingDraft | null;
+  earlierTakes: DraftTake[];
   audioUrl: string | null;
   isPersistent: boolean;
   isStarting: boolean;
@@ -79,10 +99,10 @@ interface HummingInputState {
   isFinalizingRecording: boolean;
   isRerecording: boolean;
   isTranscribing: boolean;
+  waveformToolCalled: boolean;
+  pendingSubmission: PendingHummingSubmission | null;
   isSavingDraft: boolean;
   isSavingReplacement: boolean;
-  progress: number;
-  progressStage: HummingWorkerProgressStage | null;
   error: string | null;
   replacementCandidate: LocalHummingDraft | null;
   replacementAudioUrl: string | null;
@@ -94,6 +114,7 @@ function emptyState(scopeKey: string, loaded = false): HummingInputState {
     scopeKey,
     loaded,
     draft: null,
+    earlierTakes: [],
     audioUrl: null,
     isPersistent: true,
     isStarting: false,
@@ -102,10 +123,10 @@ function emptyState(scopeKey: string, loaded = false): HummingInputState {
     isFinalizingRecording: false,
     isRerecording: false,
     isTranscribing: false,
+    waveformToolCalled: false,
+    pendingSubmission: null,
     isSavingDraft: false,
     isSavingReplacement: false,
-    progress: 0,
-    progressStage: null,
     error: null,
     replacementCandidate: null,
     replacementAudioUrl: null,
@@ -114,11 +135,7 @@ function emptyState(scopeKey: string, loaded = false): HummingInputState {
 }
 
 function errorCode(error: unknown): string {
-  return error instanceof HummingTranscriptionError
-    ? error.code
-    : error instanceof Error
-      ? error.message
-      : 'transcription_failed';
+  return error instanceof Error ? error.message : 'transcription_failed';
 }
 
 interface UseHummingInputOptions {
@@ -161,6 +178,8 @@ export function useHummingInput({
 
   scopeRef.current = scopeKey;
   const visibleState = state.scopeKey === scopeKey ? state : emptyState(scopeKey, !sessionId);
+  const understanding = useHummingUnderstanding(visibleState.draft);
+  const understandingResult = understanding.result;
   const setForScope = useCallback((targetScope: string, update: (current: HummingInputState) => HummingInputState) => {
     setState((current) => current.scopeKey === targetScope ? update(current) : current);
   }, []);
@@ -179,7 +198,10 @@ export function useHummingInput({
     let active = true;
     const cancelledRecordingGenerations = cancelledRecordingGenerationsRef.current;
     if (sessionId) {
-      void getHummingDraft(ownerKey, sessionId).then((draft) => {
+      void Promise.all([
+        getHummingDraft(ownerKey, sessionId),
+        getEarlierHummingDrafts(ownerKey, sessionId),
+      ]).then(([draft, earlier]) => {
         if (!active) return;
         const audioUrl = draft ? URL.createObjectURL(draft.blob) : null;
         setState((current) => {
@@ -195,6 +217,9 @@ export function useHummingInput({
             ...emptyState(scopeKey),
             loaded: true,
             draft,
+            earlierTakes: earlier.map(take => ({
+              draft: take, audioUrl: URL.createObjectURL(take.blob), isPersistent: isSessionStoragePersistent(),
+            })),
             audioUrl,
             isPersistent: isSessionStoragePersistent(),
           };
@@ -238,6 +263,7 @@ export function useHummingInput({
       setState((current) => {
         if (current.scopeKey !== scopeKey) return current;
         if (current.audioUrl) URL.revokeObjectURL(current.audioUrl);
+        for (const take of current.earlierTakes) URL.revokeObjectURL(take.audioUrl);
         if (current.replacementAudioUrl) URL.revokeObjectURL(current.replacementAudioUrl);
         return emptyState(scopeKey, !sessionId);
       });
@@ -250,7 +276,9 @@ export function useHummingInput({
       !sessionId
       || busy
       || !visibleState.loaded
-      || (replacing ? !visibleState.draft || visibleState.replacementCandidate : Boolean(visibleState.draft))
+      || visibleState.replacementCandidate
+      || (replacing ? !visibleState.draft
+        : visibleState.earlierTakes.length + Number(Boolean(visibleState.draft)) >= HUMMING_MAX_TAKES)
       || visibleState.isStarting
       || visibleState.isRecording
       || visibleState.isFinalizingRecording
@@ -388,7 +416,7 @@ export function useHummingInput({
 
         let persistent = false;
         try {
-          const saved = await saveHummingDraft(draft);
+          const saved = await saveHummingDraft(draft, true);
           persistent = saved.persistent;
         } catch {
           persistent = false;
@@ -396,9 +424,11 @@ export function useHummingInput({
         if (!stillCurrent || scopeRef.current !== scopeKey || recordingGenerationRef.current !== generation) return;
         const audioUrl = URL.createObjectURL(draft.blob);
         setForScope(scopeKey, (current) => {
-          if (current.audioUrl) URL.revokeObjectURL(current.audioUrl);
           return {
             ...current,
+            earlierTakes: current.draft && current.audioUrl
+              ? [...current.earlierTakes, { draft: current.draft, audioUrl: current.audioUrl, isPersistent: current.isPersistent }]
+              : current.earlierTakes,
             draft,
             audioUrl,
             isPersistent: persistent,
@@ -451,6 +481,7 @@ export function useHummingInput({
     sessionId,
     setForScope,
     visibleState.draft,
+    visibleState.earlierTakes.length,
     visibleState.isFinalizingRecording,
     visibleState.isRecording,
     visibleState.isStarting,
@@ -504,7 +535,7 @@ export function useHummingInput({
     if (!draft || visibleState.isSavingDraft) return false;
     setForScope(scopeKey, (current) => ({ ...current, isSavingDraft: true }));
     try {
-      const result = await saveHummingDraft(draft);
+      const result = await saveHummingDraft(draft, true);
       if (scopeRef.current !== scopeKey) return false;
       setForScope(scopeKey, (current) => ({
         ...current,
@@ -543,6 +574,7 @@ export function useHummingInput({
         return {
           ...current,
           draft: candidate,
+          analysis: null,
           audioUrl,
           isPersistent: true,
           isSavingReplacement: false,
@@ -580,8 +612,26 @@ export function useHummingInput({
     });
   }, [scopeKey, setForScope]);
 
-  const discard = useCallback(() => {
+  const discard = useCallback((id?: string) => {
     if (visibleState.isSavingDraft || visibleState.isSavingReplacement) return;
+    if (id && (visibleState.isStarting || visibleState.isRecording || visibleState.isFinalizingRecording || visibleState.isTranscribing)) return;
+    if (id && visibleState.earlierTakes.length > 0) {
+      if (sessionId) void discardHummingDraft(ownerKey, sessionId, id).catch(() => {});
+      setForScope(scopeKey, current => {
+        if (current.draft?.id === id) {
+          const previous = current.earlierTakes.at(-1);
+          if (!previous) return current;
+          if (current.audioUrl) URL.revokeObjectURL(current.audioUrl);
+          if (current.replacementAudioUrl) URL.revokeObjectURL(current.replacementAudioUrl);
+          return { ...current, ...previous, earlierTakes: current.earlierTakes.slice(0, -1),
+            analysis: null, replacementCandidate: null, replacementAudioUrl: null, error: null };
+        }
+        const take = current.earlierTakes.find(item => item.draft.id === id);
+        if (take) URL.revokeObjectURL(take.audioUrl);
+        return { ...current, earlierTakes: current.earlierTakes.filter(item => item.draft.id !== id) };
+      });
+      return;
+    }
     if (permissionControllerRef.current?.scopeKey === scopeKey) {
       permissionControllerRef.current.controller.abort();
       permissionControllerRef.current = null;
@@ -599,10 +649,11 @@ export function useHummingInput({
     if (sessionId) void discardHummingDraft(ownerKey, sessionId).catch(() => {});
     setForScope(scopeKey, (current) => {
       if (current.audioUrl) URL.revokeObjectURL(current.audioUrl);
+      for (const take of current.earlierTakes) URL.revokeObjectURL(take.audioUrl);
       if (current.replacementAudioUrl) URL.revokeObjectURL(current.replacementAudioUrl);
       return { ...emptyState(scopeKey, true), isPersistent: current.isPersistent };
     });
-  }, [clearRecordingTimer, ownerKey, scopeKey, sessionId, setForScope, visibleState.isSavingDraft, visibleState.isSavingReplacement]);
+  }, [clearRecordingTimer, ownerKey, scopeKey, sessionId, setForScope, visibleState]);
 
   const cancelTranscription = useCallback(() => {
     if (transcriptionRef.current?.scopeKey !== scopeKey) return;
@@ -612,8 +663,7 @@ export function useHummingInput({
     setForScope(scopeKey, (current) => ({
       ...current,
       isTranscribing: false,
-      progress: 0,
-      progressStage: null,
+      pendingSubmission: null,
       error: null,
     }));
   }, [scopeKey, setForScope]);
@@ -624,30 +674,39 @@ export function useHummingInput({
     if (!attachment) return false;
 
     try {
-      const asset = await getHummingAsset(ownerKey, attachment.id);
-      if (!asset) {
+      const takes = hummingTakes(attachment);
+      const assets = await Promise.all(takes.map(take => getHummingAsset(ownerKey, take.id)));
+      if (scopeRef.current !== scopeKey) return false;
+      if (assets.some(asset => !asset)) {
         setForScope(scopeKey, (current) => ({ ...current, error: 'recording_unavailable' }));
         return false;
       }
-      const draft: LocalHummingDraft = {
-        ...asset,
+      const drafts = takes.map((take, index): LocalHummingDraft => ({
+        ...assets[index]!,
         sessionId,
-        durationSeconds: attachment.recordingDurationSeconds,
-      };
-      const saved = await saveHummingDraft(draft);
+        durationSeconds: take.recordingDurationSeconds,
+      }));
+      const restored: DraftTake[] = [];
+      for (const [index, draft] of drafts.entries()) {
+        const saved = await saveHummingDraft(draft, index > 0);
+        if (scopeRef.current !== scopeKey) return false;
+        restored.push({ draft, audioUrl: '', isPersistent: saved.persistent });
+      }
       if (scopeRef.current !== scopeKey) return false;
-      const audioUrl = URL.createObjectURL(draft.blob);
+      for (const take of restored) take.audioUrl = URL.createObjectURL(take.draft.blob);
+      const latest = restored.pop()!;
       setForScope(scopeKey, (current) => {
         if (current.audioUrl) URL.revokeObjectURL(current.audioUrl);
+        for (const take of current.earlierTakes) URL.revokeObjectURL(take.audioUrl);
         if (current.replacementAudioUrl) URL.revokeObjectURL(current.replacementAudioUrl);
         return {
           ...current,
           loaded: true,
-          draft,
-          audioUrl,
+          ...latest,
+          earlierTakes: restored,
+          analysis: null,
           replacementCandidate: null,
           replacementAudioUrl: null,
-          isPersistent: saved.persistent,
           error: null,
         };
       });
@@ -663,12 +722,13 @@ export function useHummingInput({
     entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>,
     preview = false,
   ): Promise<boolean> => {
-    const draft = visibleState.draft;
+    const primaryDraft = visibleState.draft;
     if (
-      !draft
+      !primaryDraft
       || !sessionId
       || busy
       || visibleState.isTranscribing
+      || transcriptionRef.current?.scopeKey === scopeKey
       || visibleState.isStarting
       || visibleState.isRecording
       || visibleState.isFinalizingRecording
@@ -677,11 +737,6 @@ export function useHummingInput({
       || visibleState.isSavingReplacement
       || visibleState.replacementCandidate
     ) return false;
-    if (!visibleState.isPersistent) {
-      setForScope(scopeKey, (current) => ({ ...current, error: 'storage_unavailable' }));
-      return false;
-    }
-
     const generation = transcriptionGenerationRef.current + 1;
     transcriptionGenerationRef.current = generation;
     const controller = new AbortController();
@@ -689,64 +744,117 @@ export function useHummingInput({
     setForScope(scopeKey, (current) => ({
       ...current,
       isTranscribing: true,
-      progress: 0,
-      progressStage: 'loading',
+      waveformToolCalled: false,
+      pendingSubmission: preview ? null : {
+        id: `pending-humming-${primaryDraft.id}-${generation}`,
+        text,
+        timestamp: Date.now(),
+        takes: [
+          ...current.earlierTakes.map(({ draft, audioUrl }) => ({ id: draft.id, durationSeconds: draft.durationSeconds, audioUrl })),
+          { id: primaryDraft.id, durationSeconds: primaryDraft.durationSeconds, audioUrl: current.audioUrl },
+        ],
+        takeNumber: 1,
+      },
+      analysis: preview ? null : current.analysis,
       error: null,
     }));
 
+    const drafts = [...visibleState.earlierTakes.map(take => take.draft), primaryDraft];
+    const styleResults = new Map<string, NonNullable<ReturnType<typeof parseMusicUnderstanding>>>();
+    const styleRequests = new Map<string, AbortController>();
+    const abortStyleRequests = () => {
+      for (const request of styleRequests.values()) request.abort();
+    };
+    controller.signal.addEventListener('abort', abortStyleRequests, { once: true });
+
     try {
-      const cached = visibleState.analysis?.id === draft.id ? visibleState.analysis : null;
-      const pcm = cached && !preview ? null : await decodeHummingRecording(draft.blob);
-      if (
-        controller.signal.aborted
-        || scopeRef.current !== scopeKey
-        || transcriptionGenerationRef.current !== generation
-      ) return false;
+      if (!visibleState.isPersistent || visibleState.earlierTakes.some(take => !take.isPersistent)) {
+        // Sending is also the retry path when the attachment has no separate save control.
+        for (const draft of drafts) {
+          const saved = await saveHummingDraft(draft, true).catch(() => ({ persistent: false }));
+          if (controller.signal.aborted || scopeRef.current !== scopeKey
+            || transcriptionGenerationRef.current !== generation) return false;
+          if (!saved.persistent) {
+            setForScope(scopeKey, (current) => ({ ...current, error: 'storage_unavailable' }));
+            return false;
+          }
+        }
+        setForScope(scopeKey, (current) => ({ ...current, isPersistent: true,
+          earlierTakes: current.earlierTakes.map(take => ({ ...take, isPersistent: true })) }));
+      }
+      if (!preview) {
+        for (const draft of drafts) {
+          const cachedStyle = draft === primaryDraft ? parseMusicUnderstanding(understandingResult) : null;
+          if (cachedStyle) {
+            styleResults.set(draft.id, cachedStyle);
+            continue;
+          }
+          const request = new AbortController();
+          styleRequests.set(draft.id, request);
+          void understandHumming(draft.blob, draft.ownerKey, request.signal).then((result) => {
+            const style = parseMusicUnderstanding(result);
+            if (style && !request.signal.aborted) styleResults.set(draft.id, style);
+          }).catch(() => {
+            // Style is optional. The waveform result decides when to continue.
+          });
+        }
+      }
+      const attachments: HummingAttachment[] = [];
+      for (const [index, draft] of (preview ? [primaryDraft] : drafts).entries()) {
+        const cached = !preview && visibleState.analysis?.id === draft.id ? visibleState.analysis : null;
+        const transcription = cached ? null : await transcribeHumming(draft.blob, controller.signal, () => {
+          if (!controller.signal.aborted && transcriptionGenerationRef.current === generation) {
+            setForScope(scopeKey, current => ({
+              ...current,
+              waveformToolCalled: true,
+              pendingSubmission: current.pendingSubmission
+                ? { ...current.pendingSubmission, takeNumber: index + 1 } : null,
+            }));
+          }
+        });
+        if (controller.signal.aborted || scopeRef.current !== scopeKey
+          || transcriptionGenerationRef.current !== generation) return false;
 
-      const transcription = pcm ? await transcribeHumming(pcm.samples, {
-        recordingDurationSeconds: draft.durationSeconds,
-        sampleRate: pcm.sampleRate,
-        signal: controller.signal,
-        onProgress(stage, progress) {
-          setForScope(scopeKey, (current) => ({
+        const attachment: HummingAttachment = cached ?? {
+          kind: 'humming',
+          schemaVersion: HUMMING_SCHEMA_VERSION,
+          id: draft.id,
+          recordingDurationSeconds: draft.durationSeconds,
+          trimStartSeconds: transcription!.result.trimStartSeconds,
+          melodyDurationSeconds: transcription!.result.melodyDurationSeconds,
+          transcription: {
+            engine: 'audio-llm',
+            modelRhythm: transcription!.modelRhythm,
+            modelVersion: transcription!.modelVersion,
+            preprocessingVersion: HUMMING_AGENT_PREPROCESSING_VERSION,
+            notes: transcription!.result.notes,
+            warnings: transcription!.result.warnings,
+          },
+        };
+        if (new Blob([JSON.stringify(attachment)]).size > HUMMING_MAX_ATTACHMENT_BYTES) {
+          throw new Error('attachment_too_large');
+        }
+
+        const safeAttachment = projectHummingAttachment(attachment);
+        if (!safeAttachment) throw new Error('invalid_transcription');
+        if (preview) {
+          setForScope(scopeKey, current => current.draft === draft ? {
             ...current,
-            progressStage: stage,
-            progress,
-          }));
-        },
-      }) : null;
-      if (
-        controller.signal.aborted
-        || scopeRef.current !== scopeKey
-        || transcriptionGenerationRef.current !== generation
-      ) return false;
-
-      const attachment: HummingAttachment = cached && !preview ? cached : {
-        kind: 'humming',
-        schemaVersion: HUMMING_SCHEMA_VERSION,
-        id: draft.id,
-        recordingDurationSeconds: draft.durationSeconds,
-        trimStartSeconds: transcription!.result.trimStartSeconds,
-        melodyDurationSeconds: transcription!.result.melodyDurationSeconds,
-        transcription: {
-          engine: 'basic-pitch',
-          modelVersion: BASIC_PITCH_MODEL_VERSION,
-          preprocessingVersion: HUMMING_PREPROCESSING_VERSION,
-          notes: transcription!.result.notes,
-          warnings: transcription!.result.warnings,
-        },
-      };
-      if (new Blob([JSON.stringify(attachment)]).size > HUMMING_MAX_ATTACHMENT_BYTES) {
-        throw new HummingTranscriptionError('attachment_too_large');
+            analysis: safeAttachment,
+          } : current);
+          return true;
+        }
+        const reference = styleResults.get(draft.id);
+        // Use only what is ready now. A slow style request cannot hold up composition.
+        styleRequests.get(draft.id)?.abort();
+        const take = reference ? projectHummingAttachment({ ...safeAttachment, understanding: reference }) : safeAttachment;
+        if (!take) throw new Error('invalid_transcription');
+        attachments.push(take);
       }
-
-      const safeAttachment = projectHummingAttachment(attachment);
-      if (!safeAttachment) throw new HummingTranscriptionError('invalid_transcription');
-      if (preview) {
-        setForScope(scopeKey, current => current.draft?.id === draft.id ? { ...current, analysis: safeAttachment } : current);
-        return true;
-      }
-      const accepted = await onSend(text, entryPoint, safeAttachment);
+      const [first, ...additionalTakes] = attachments;
+      const outgoing = additionalTakes.length ? { ...first, additionalTakes } : first;
+      setForScope(scopeKey, current => ({ ...current, pendingSubmission: null }));
+      const accepted = await onSend(text, entryPoint, outgoing);
       if (accepted === false) return false;
       try {
         await clearHummingDraft(ownerKey, sessionId);
@@ -756,6 +864,7 @@ export function useHummingInput({
       }
       setForScope(scopeKey, (current) => {
         if (current.audioUrl) URL.revokeObjectURL(current.audioUrl);
+        for (const take of current.earlierTakes) URL.revokeObjectURL(take.audioUrl);
         if (current.replacementAudioUrl) URL.revokeObjectURL(current.replacementAudioUrl);
         return {
           ...emptyState(scopeKey, true),
@@ -773,13 +882,14 @@ export function useHummingInput({
       }
       return false;
     } finally {
+      controller.signal.removeEventListener('abort', abortStyleRequests);
+      abortStyleRequests();
       if (transcriptionRef.current?.controller === controller) transcriptionRef.current = null;
       if (scopeRef.current === scopeKey && transcriptionGenerationRef.current === generation) {
         setForScope(scopeKey, (current) => ({
           ...current,
           isTranscribing: false,
-          progress: 0,
-          progressStage: null,
+          pendingSubmission: null,
         }));
       }
     }
@@ -791,7 +901,9 @@ export function useHummingInput({
     sessionId,
     setForScope,
     visibleState.draft,
+    visibleState.earlierTakes,
     visibleState.analysis,
+    understandingResult,
     visibleState.isFinalizingRecording,
     visibleState.isRecording,
     visibleState.isRerecording,
@@ -803,11 +915,17 @@ export function useHummingInput({
     visibleState.replacementCandidate,
   ]);
 
+  const analyze = useCallback(() => submit('', 'text', true), [submit]);
+
   return {
     ...visibleState,
+    recordingStream: visibleState.isRecording ? recorderRef.current?.session.stream ?? null : null,
     analysis: visibleState.analysis?.id === visibleState.draft?.id ? visibleState.analysis : null,
-    analyze: () => submit('', 'text', true),
-    canRecord: Boolean(sessionId) && visibleState.loaded && !busy && !visibleState.draft
+    analyze,
+    understanding,
+    canRecord: Boolean(sessionId) && visibleState.loaded && !busy
+      && visibleState.earlierTakes.length + Number(Boolean(visibleState.draft)) < HUMMING_MAX_TAKES
+      && !visibleState.replacementCandidate && !visibleState.isSavingDraft && !visibleState.isSavingReplacement
       && !visibleState.isStarting && !visibleState.isRecording && !visibleState.isFinalizingRecording
       && !visibleState.isTranscribing,
     startRecording,
@@ -821,6 +939,6 @@ export function useHummingInput({
     discard,
     cancelTranscription,
     restoreAttachment,
-    submit,
+    submit: (text, entryPoint) => submit(text, entryPoint),
   };
 }

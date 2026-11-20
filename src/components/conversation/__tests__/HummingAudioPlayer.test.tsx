@@ -51,6 +51,39 @@ describe('HummingAudioPlayer', () => {
     vi.restoreAllMocks();
   });
 
+  it('animates the compact fill for the full media duration and rewinds when stopped', async () => {
+    const onRemove = vi.fn();
+    const { container } = renderPlayer({ compact: true, label: 'Humming 01', onRemove });
+    const audio = container.querySelector('audio')!;
+    const progress = container.querySelector<HTMLElement>('[data-humming-chip-progress]')!;
+    const playButton = container.querySelector<HTMLButtonElement>('[aria-label="Play Humming 01"]')!;
+    expect(playButton.textContent).toBe('Humming 01');
+    expect(container.querySelector('input[type="range"]')).toBeNull();
+
+    act(() => setMetadata(audio, 8));
+    await act(async () => playButton.click());
+    expect(playButton.dataset.playing).toBe('true');
+    expect(progress.style.animationDuration).toBe('8s');
+    act(() => {
+      audio.currentTime = 4;
+      audio.dispatchEvent(new Event('timeupdate'));
+    });
+    expect(progress.style.animationDuration).toBe('8s');
+    expect(progress.style.width).toBe('');
+    act(() => audio.dispatchEvent(new Event('waiting')));
+    expect(progress.style.animationPlayState).toBe('paused');
+    act(() => audio.dispatchEvent(new Event('playing')));
+    expect(progress.style.animationPlayState).toBe('running');
+    const stopButton = container.querySelector<HTMLButtonElement>('[aria-label="Stop Humming 01"]')!;
+    act(() => stopButton.click());
+    expect(audio.currentTime).toBe(0);
+    expect(playButton.dataset.playing).toBe('false');
+    expect(container.querySelector('[aria-label="Play Humming 01"]')).toBe(playButton);
+
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Delete recording"]')!.click());
+    expect(onRemove).toHaveBeenCalledOnce();
+  });
+
   it('recovers from a rejected play request and retries from the user action', async () => {
     playMock.mockImplementationOnce(() => Promise.reject(new Error('blocked')));
     const { container } = renderPlayer();

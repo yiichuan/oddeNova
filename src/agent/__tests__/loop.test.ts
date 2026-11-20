@@ -1,4 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
+import { hummingAttachment } from '../../lib/__tests__/fixtures/humming';
+import {
+  HUMMING_LLM_MODEL_VERSION,
+  HUMMING_LLM_PREPROCESSING_VERSION,
+  type HummingAttachment,
+} from '../../types/humming';
 
 vi.mock('../../services/strudel', () => ({
   validateCodeRuntime: vi.fn().mockReturnValue({ ok: true }),
@@ -969,4 +975,43 @@ it('sends prepared text with the editor context to the composition model', async
     llm,
     preparedUserContent: 'arrange the score\n\nImage observations\nG4 starts on beat one.',
   }));
+});
+
+it('returns model estimates and note times through the humming tool', async () => {
+  const base = hummingAttachment();
+  const humming: HummingAttachment = {
+    ...base,
+    trimStartSeconds: 0.25,
+    melodyDurationSeconds: 0.5,
+    transcription: {
+      ...base.transcription,
+      engine: 'audio-llm',
+      modelVersion: HUMMING_LLM_MODEL_VERSION,
+      preprocessingVersion: HUMMING_LLM_PREPROCESSING_VERSION,
+      modelRhythm: { bpm: 110, timeSignature: '3/4' },
+      notes: [{ pitchMidi: 60, startSeconds: 0, durationSeconds: 0.5, levelDb: 0 }],
+    },
+  };
+  const chatWithTools = vi.fn<LLMCaller['chatWithTools']>()
+    .mockResolvedValueOnce({ content: null, toolCalls: [{ id: 'read', name: 'analyzeHummingWaveform', arguments: '{}' }] })
+    .mockResolvedValueOnce({ content: 'Measured one C4.', toolCalls: [] });
+
+  await runAgentLoop({
+    initialCode: '',
+    instruction: 'Analyze this humming',
+    locale: 'en',
+    systemPrompt: 'Analyze the recording',
+    llm: { chatWithTools },
+    humming,
+  });
+  expect(chatWithTools.mock.calls[0][1]).toEqual(expect.arrayContaining([
+    expect.objectContaining({ function: expect.objectContaining({ name: 'analyzeHummingWaveform' }) }),
+  ]));
+  const result = chatWithTools.mock.calls[1][0].find(message => message.tool_call_id === 'read');
+  expect(JSON.parse(result!.content as string)).toMatchObject({
+    ok: true,
+    tempo: { bpm: 110 },
+    meter: { time_signature: '3/4' },
+    notes: [{ pitch: 'C4', midi: 60, start_seconds: 0.25, end_seconds: 0.75, duration_seconds: 0.5 }],
+  });
 });

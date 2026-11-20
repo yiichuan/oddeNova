@@ -1,4 +1,5 @@
 import type { ImageAttachment, UserContent } from '../lib/image-types';
+import { hasHummingWaveformReport } from '../lib/humming-context';
 // Agent loop. Repeatedly calls the model with the tool schemas, dispatches
 // each returned tool_call, feeds results back, and terminates when:
 //   - the model invokes `commit` (CommitSignal)
@@ -17,6 +18,7 @@ import {
   type AgentState,
   type ToolContext,
 } from './tools';
+import type { HummingAttachment } from '../types/humming';
 import { parseScore, summariseScore } from './parser';
 import {
   getErrorMessage,
@@ -104,6 +106,7 @@ export interface RunAgentOptions {
   onProgress?: (e: ProgressEvent) => void;
   signal?: AbortSignal;
   conversationHistory?: ConversationTurn[];
+  humming?: HummingAttachment;
   /** When false, the model's reasoning/thinking chain is disabled for this run (default true). */
   enableThinking?: boolean;
   /** How deep to think when enabled; ignored when enableThinking is false (default 'medium'). */
@@ -272,6 +275,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     onProgress,
     signal,
     conversationHistory,
+    humming,
     enableThinking = true,
     thinkingLevel = 'medium',
   } = opts;
@@ -281,7 +285,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     finalCode: null,
   };
   const isZh = locale === 'zh';
-  const ctx: ToolContext = { state, isZh };
+  const ctx: ToolContext = { state, isZh, humming };
   const userText = typeof opts.preparedUserContent === 'string' ? opts.preparedUserContent : instruction;
   let userTurn: string;
   if (initialCode) {
@@ -307,7 +311,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     { role: 'user', content: Array.isArray(opts.preparedUserContent) ? opts.preparedUserContent.map((block, index) => index === 0 && block.type === 'text' ? { ...block, text: userTurn } : block) : userTurn },
   ];
 
-  const tools = getOpenAIToolSchemas(isZh);
+  const tools = getOpenAIToolSchemas(isZh, hasHummingWaveformReport(humming));
   const start = Date.now();
   let iterations = 0;
   let explanation = '';

@@ -2,6 +2,7 @@ import type { ImageAttachment } from '../lib/image-attachments';
 import { prepareUserText } from './image-understanding';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
+import type { HummingAttachment } from '../types/humming';
 import { buildSystemPrompt } from '../prompts/build-system-prompt';
 import {
   runAgentLoop,
@@ -271,7 +272,7 @@ function convertTools(
   }));
 }
 
-function getActiveLLMCaller(): LLMCaller {
+export function getActiveLLMCaller(): LLMCaller {
   return isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
 }
 
@@ -514,6 +515,7 @@ export async function runAgent(
   signal?: AbortSignal,
   conversationHistory?: ConversationTurn[],
   images?: ImageAttachment[],
+  humming?: HummingAttachment,
 ): Promise<RunAgentResult> {
   const preparedUserContent = await prepareUserText(instruction, images, signal);
   const preparedHistory: ChatMsg[] = await prepareConversationHistory(conversationHistory, signal);
@@ -561,6 +563,7 @@ export async function runAgent(
     onProgress,
     signal,
     conversationHistory,
+    humming,
     enableThinking: intent === 'compose',
     thinkingLevel: getSelectedThinkingLevel(),
   });

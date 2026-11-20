@@ -7,6 +7,7 @@ export interface HummingRecording {
 }
 
 export interface HummingRecorderSession {
+  stream: MediaStream;
   recording: Promise<HummingRecording>;
   stop(): void;
   cancel(): void;
@@ -150,6 +151,7 @@ export async function startHummingRecording(
   }
 
   return {
+    stream,
     recording,
     stop,
     cancel() {

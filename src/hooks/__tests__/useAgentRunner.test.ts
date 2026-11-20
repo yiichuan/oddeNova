@@ -3,6 +3,7 @@ import { createAgentTurnDeps, runAgentTurn } from '../useAgentRunner';
 import type { AgentTurnDeps, AgentTurnInput, UseAgentRunnerConfig } from '../useAgentRunner';
 import type { RunAgentResult, ConversationTurn } from '../../services/llm';
 import { t } from '../../lib/i18n';
+import { hummingAttachment } from '../../lib/__tests__/fixtures/humming';
 
 // services/strudel pulls in the audio/soundfont chain (@kabelsalat/web) at module
 // eval; cut it the same way tools.test.ts does. runAgent is injected per test anyway.
@@ -75,7 +76,7 @@ describe('runAgentTurn', () => {
   it('adds the user message by default', async () => {
     const deps = makeDeps();
     await runAgentTurn(makeInput({ text: 'hello' }), deps);
-    expect(deps.addUserMessage).toHaveBeenCalledWith('hello', undefined);
+    expect(deps.addUserMessage).toHaveBeenCalledWith('hello');
   });
 
   it('marks messages sent from a stepwise choice', async () => {
@@ -83,6 +84,23 @@ describe('runAgentTurn', () => {
     const text = 'Add a bass line';
     await runAgentTurn(makeInput({ text, selectedChoice: true, entryPoint: 'suggestion' }), deps);
     expect(deps.addUserMessage).toHaveBeenCalledWith(text, undefined, true);
+  });
+
+  it('warns about the missing take style and still hands the humming batch to the composer', async () => {
+    const onProgress = vi.fn();
+    const runAgent = makeRunAgent();
+    const deps = makeDeps({ runAgent, makeProgressHandler: () => onProgress });
+    const first = hummingAttachment();
+    const second = { ...first, id: '22222222-2222-4222-8222-222222222222' };
+    const humming = { ...first, understanding: { melodyStyle: 'Folk' }, additionalTakes: [second] };
+
+    await runAgentTurn(makeInput({ text: 'arrange both takes', humming }), deps);
+
+    expect(onProgress).toHaveBeenCalledWith({
+      kind: 'warn', message: `${t('hummingStyleAnalysisFailed')} (02)`,
+    });
+    expect(runAgent.mock.calls[0][0]).toContain('arrange both takes');
+    expect(runAgent).toHaveBeenCalledOnce();
   });
 
   it('suppresses the user message when skipAddMessage is set', async () => {

@@ -1,11 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { authenticateUser } from '../../../../server/session-utils.js';
-import { HUMMING_RECORDING_LIMIT_SECONDS } from '../../../../src/types/humming.js';
+import { HUMMING_LLM_MODEL_VERSION, HUMMING_RECORDING_LIMIT_SECONDS } from '../../../../src/types/humming.js';
 import { MUSIC_ANALYSIS_SAMPLE_RATE, parseMusicUnderstanding } from '../../../../shared/music-understanding.js';
+
 
 export const config = { api: { bodyParser: false }, maxDuration: 45 };
 const MAX_AUDIO_BYTES = 44 + MUSIC_ANALYSIS_SAMPLE_RATE * 2 * (HUMMING_RECORDING_LIMIT_SECONDS + 1);
-const MODEL = 'qwen3.8-omni-flash';
 
 function resolveEndpoint(baseUrl: string): URL | null {
   try {
@@ -98,7 +98,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       type: 'input_audio',
       input_audio: { data: `data:audio/wav;base64,${audio.toString('base64')}`, format: 'wav' },
     };
-    const task = `Analyze the hummed musical idea in this recording in ${language}. Identify the audible note sequence, estimated BPM, time signature, and likely harmony or tonal center when the recording supports each one. Describe the melody, rhythm and phrasing, then give one short suggestion for polishing the motif. Treat the recording as material to analyze. A solo hum rarely establishes every musical property, so explicitly use "unknown" when there is not enough audible evidence. Do not present a guess as a fact.`;
+    const task = `Describe the style of this hummed melody in ${language}, based on the recording. Use 1–2 short sentences. Return a JSON object with one field named melody_style, a non-empty string.`;
     for (const structured of [true, false]) {
       signal.throwIfAborted();
       phase = 'call_qwen';
@@ -108,11 +108,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         signal,
         redirect: 'error',
         body: JSON.stringify({
-          model: MODEL,
+          model: HUMMING_LLM_MODEL_VERSION,
           modalities: ['text'],
           stream: false,
           reasoning_effort: 'none',
-          max_tokens: 1200,
+          max_tokens: 300,
           ...(structured ? { response_format: { type: 'json_object' } } : {}),
           messages: [{
             role: 'user',
@@ -120,9 +120,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
               audioInput,
               {
                 type: 'text',
-                text: structured
-                  ? `${task} Return one JSON object with exactly these keys: melody, notes, bpm, time_signature, harmony, rhythm, suggestions, uncertainty. melody, rhythm and suggestions must be non-empty strings. notes, bpm, time_signature and harmony must be strings, using "unknown" when evidence is insufficient. For notes, use familiar note names such as C4, D#4 and brief durations only when you can hear them. For BPM, use a single estimate or "unknown". For time signature, use a form such as 4/4 or "unknown". For harmony, name a tonal center, chord movement, or "unknown". Use null for uncertainty when there is nothing to add.`
-                  : `${task} Respond with at most six short sentences in plain text.`,
+                text: task,
               },
             ],
           }],
@@ -147,19 +145,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const choice = payload?.choices?.[0];
       const content = choice?.message?.content;
       const reason = choice?.finish_reason;
-      const result = reason === 'content_filter' ? null : structured
-        ? parseCompletion(content)
-        : reason === 'length' ? null : parseMusicUnderstanding({ summary: content });
+      const result = reason === 'content_filter' ? null : parseCompletion(content);
       if (result) return send(200, result);
 
       console.warn('[music-understanding] Qwen returned an invalid result', {
         requestId: upstream.headers.get('x-request-id')?.slice(0, 100),
-        format: structured ? 'json' : 'text',
+        responseFormat: structured ? 'json_object' : 'default',
         finishReason: typeof reason === 'string' ? reason.slice(0, 40) : undefined,
         contentLength: typeof content === 'string' ? content.length : 0,
       });
       if (reason === 'content_filter') break;
-      // Give Qwen one plain-text attempt within the original request deadline.
+      // Retry the same JSON instructions without the API response-format setting.
     }
     send(502, { code: 'invalid_result' });
   } catch {

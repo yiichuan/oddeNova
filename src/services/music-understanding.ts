@@ -3,7 +3,11 @@ import { encodeWav16 } from '../lib/wav';
 import { getAccessToken } from './auth-service';
 import { decodeHummingRecording, resampleMono } from './humming-audio';
 
-export async function understandHumming(recording: Blob, ownerKey: string, signal: AbortSignal) {
+export async function understandHumming(
+  recording: Blob,
+  ownerKey: string,
+  signal: AbortSignal,
+) {
   const userId = ownerKey.startsWith('user:') ? ownerKey.slice(5) : null;
   const token = userId ? await getAccessToken(userId) : null;
   signal.throwIfAborted();

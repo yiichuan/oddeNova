@@ -537,22 +537,22 @@ function privacyDevMiddleware(): Plugin {
   }
 }
 
-// Node's fetch ignores HTTPS_PROXY. On a machine that reaches the outside
-// only through one, every dev API middleware fetch (Supabase auth and session
-// sync, the VCSL passthrough, …) would fail with ECONNRESET while the browser,
-// which does use the proxy, signs in fine. So the dev server routes its own
-// fetches through the same proxy, keeping loopback (AirJelly) direct.
-function useEnvProxyForDevFetch() {
-  const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy
+function useEnvProxyForDevFetch(devProxy?: string) {
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy
     || process.env.HTTP_PROXY || process.env.http_proxy
-  if (!proxyUrl) return
-  const noProxy = [process.env.NO_PROXY || process.env.no_proxy, 'localhost,127.0.0.1,::1']
+  if (!devProxy && !proxy) return
+
+  // A local Vite override can point to the active proxy even when the shell
+  // still exports an old port. The override is server-side only.
+  const noProxy = [process.env.no_proxy || process.env.NO_PROXY, 'localhost,127.0.0.1,::1']
     .filter(Boolean).join(',')
-  setGlobalDispatcher(new EnvHttpProxyAgent({ noProxy }))
+  setGlobalDispatcher(new EnvHttpProxyAgent({
+    noProxy,
+    ...(devProxy ? { httpProxy: devProxy, httpsProxy: devProxy } : {}),
+  }))
 }
 
 export default defineConfig(({ command, isPreview, mode }) => {
-  if (command === 'serve' && !isPreview && !process.env.VITEST) useEnvProxyForDevFetch()
   // Vite hashes the patches directory mtime, not the contents of existing
   // patch files. Key the cache by their contents so patched package exports
   // cannot be served from an older prebundle. Keep build-mode caches separate.
@@ -566,6 +566,9 @@ export default defineConfig(({ command, isPreview, mode }) => {
   // (officialApiDevMiddleware) read server-side keys from process.env, so
   // load the full .env here and merge any missing keys in (shell env wins).
   const env = loadEnv(mode, process.cwd(), '')
+  if (command === 'serve' && !isPreview && !process.env.VITEST) {
+    useEnvProxyForDevFetch(env.ODDENOVA_DEV_PROXY?.trim())
+  }
   for (const key of ['OFFICIAL_API_KEY', 'QWEN_OMNI_API_KEY', 'QWEN_OMNI_BASE_URL', 'OPENROUTER_API_KEY', 'OPENROUTER_VISION_MODEL', 'VITE_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
     if (!process.env[key] && env[key]) process.env[key] = env[key]
   }

@@ -9,16 +9,9 @@ import { MUSIC_ANALYSIS_SAMPLE_RATE, parseMusicUnderstanding } from '../../share
 vi.mock('../../server/session-utils', () => ({ authenticateUser: vi.fn() }));
 
 const analysis = {
-  melody: 'One held note rises at the end.',
-  notes: 'C4, D4, then a held E4.',
-  bpm: '96 BPM, uncertain.',
-  time_signature: '4/4, uncertain.',
-  harmony: 'C major tonal center, uncertain.',
-  rhythm: 'Two short phrases separated by a pause.',
-  suggestions: 'Keep the final note long.',
+  melody_style: 'A mellow folk phrase suited to fingerpicked guitar.',
 };
-const { time_signature, ...analysisFields } = analysis;
-const normalizedAnalysis = { ...analysisFields, timeSignature: time_signature };
+const normalizedAnalysis = { melodyStyle: analysis.melody_style };
 const fetchUpstream = vi.fn<typeof fetch>();
 
 async function post(audio: Buffer) {
@@ -40,7 +33,7 @@ async function post(audio: Buffer) {
 }
 
 function wav() {
-  return Buffer.from(encodeWav16([new Float32Array(100)], MUSIC_ANALYSIS_SAMPLE_RATE));
+  return Buffer.from(encodeWav16([new Float32Array(2 * MUSIC_ANALYSIS_SAMPLE_RATE)], MUSIC_ANALYSIS_SAMPLE_RATE));
 }
 
 describe('music understanding route', () => {
@@ -74,8 +67,15 @@ describe('music understanding route', () => {
       stream: false,
       messages: [{ content: expect.arrayContaining([{
         type: 'input_audio', input_audio: { data: `data:audio/wav;base64,${audio.toString('base64')}`, format: 'wav' },
-      }]) }],
+      }, { type: 'text', text: expect.stringContaining('one field named melody_style') }]) }],
     });
+  });
+
+  it('keeps only melody style when the provider includes extra fields', async () => {
+    fetchUpstream.mockResolvedValueOnce(Response.json({
+      choices: [{ message: { content: JSON.stringify({ ...analysis, notes: 'C4', bpm: '120', rhythm: 'Steady' }) } }],
+    }));
+    expect(await post(wav())).toEqual({ status: 200, data: normalizedAnalysis });
   });
 
   it('accepts the full compatible endpoint without appending the route twice', async () => {
@@ -115,15 +115,15 @@ describe('music understanding route', () => {
     expect(fetchUpstream).toHaveBeenCalledOnce();
   });
 
-  it('falls back to a plain-text analysis when the structured result is incomplete', async () => {
+  it('retries for JSON without the response format when the structured result is incomplete', async () => {
     fetchUpstream
       .mockResolvedValueOnce(Response.json({
-        choices: [{ message: { content: '{"melody":"humming"}' }, finish_reason: 'stop' }],
+        choices: [{ message: { content: '{"notes":"C4"}' }, finish_reason: 'stop' }],
       }))
       .mockResolvedValueOnce(Response.json({
-        choices: [{ message: { content: 'The melody rises and ends on a held note.' }, finish_reason: 'stop' }],
+        choices: [{ message: { content: JSON.stringify(analysis) }, finish_reason: 'stop' }],
       }));
-    expect(await post(wav())).toEqual({ status: 200, data: { summary: 'The melody rises and ends on a held note.' } });
+    expect(await post(wav())).toEqual({ status: 200, data: normalizedAnalysis });
     expect(fetchUpstream).toHaveBeenCalledTimes(2);
     const first = JSON.parse(String(fetchUpstream.mock.calls[0][1]?.body));
     const second = JSON.parse(String(fetchUpstream.mock.calls[1][1]?.body));
@@ -132,11 +132,11 @@ describe('music understanding route', () => {
     expect(fetchUpstream.mock.calls[1][1]?.signal).toBe(fetchUpstream.mock.calls[0][1]?.signal);
   });
 
-  it('reports an invalid result when the fallback also returns no usable text', async () => {
+  it('reports an invalid result when the fallback also returns no usable JSON', async () => {
     fetchUpstream
       .mockResolvedValueOnce(Response.json({ choices: [] }))
       .mockResolvedValueOnce(Response.json({
-        choices: [{ message: { content: '   ' }, finish_reason: 'stop' }],
+        choices: [{ message: { content: 'The melody sounds folk-inspired.' }, finish_reason: 'stop' }],
       }));
     expect(await post(wav())).toEqual({ status: 502, data: { code: 'invalid_result' } });
     expect(fetchUpstream).toHaveBeenCalledTimes(2);

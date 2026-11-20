@@ -129,7 +129,7 @@ describe('ArchivedConversationView', () => {
     expect(table?.textContent).toContain('拍号');
     expect(table?.textContent).toContain('6/8');
   });
-  it('gives a humming message the same stable width as the live conversation', () => {
+  it('places the humming card immediately above the archived text bubble', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -153,9 +153,11 @@ describe('ArchivedConversationView', () => {
     render(hummingMessages, container, root);
 
     const bubble = container.querySelector<HTMLElement>('[data-favorites-turn="humming-user"] > div')!;
-    expect(bubble.className).toContain('w-[280px]');
     expect(bubble.className).toContain('max-w-[85%]');
-    expect(bubble.querySelector('input[type="range"]')).not.toBeNull();
+    const card = bubble.querySelector('[data-humming-audio-player]')!;
+    const textBubble = bubble.querySelector('.bg-message-user')!;
+    expect(textBubble.textContent).toBe('短指令');
+    expect(card.compareDocumentPosition(textBubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
 });

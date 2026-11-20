@@ -86,18 +86,35 @@ export async function requireAuthUser(req: VercelRequest, res: VercelResponse): 
   return data.user;
 }
 
+class AuthServiceUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super('Authentication service unavailable', { cause });
+  }
+}
+
 export async function authenticateUser(req: Pick<VercelRequest, 'headers'>) {
   const token = getBearerToken(req);
   if (!token) return null;
   const supabase = getSupabaseClient(token);
   const { data, error } = await supabase.auth.getUser(token);
+  // Supabase reports a failed network request as status 0. A transient
+  // upstream failure gives us no evidence that the user's token is invalid.
+  if (error && (isAuthRetryableFetchError(error) || error.status === 429 || (error.status ?? 0) >= 500)) {
+    throw new AuthServiceUnavailableError(error);
+  }
   return error || !data.user ? null : { user: data.user, supabase };
 }
 
 export async function requireUser(req: VercelRequest, res: VercelResponse): Promise<{ user: User; supabase: ReturnType<typeof getSupabaseClient> } | null> {
-  const auth = await authenticateUser(req);
-  if (!auth) res.status(401).json({ error: 'Unauthorized' });
-  return auth;
+  try {
+    const auth = await authenticateUser(req);
+    if (!auth) res.status(401).json({ error: 'Unauthorized' });
+    return auth;
+  } catch (error) {
+    if (!(error instanceof AuthServiceUnavailableError)) throw error;
+    res.status(503).json({ error: error.message });
+    return null;
+  }
 }
 
 export function rowToSession(row: SessionRow): ApiSession {

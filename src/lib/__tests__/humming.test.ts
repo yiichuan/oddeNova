@@ -1,71 +1,51 @@
 import { describe, expect, it } from 'vitest';
-import { selectHummingMelody } from '../humming-notes';
-import { formatHummingContext } from '../humming-context';
-import { isSafeChatMessageTransfer, projectChatMessageForTransfer, projectHummingAttachment } from '../humming-transfer';
+import { decodeHummingMelody } from '../humming-decoder';
+import { noteFramesToTime, outputToNotesPoly } from '@spotify/basic-pitch';
+import { buildHummingTurnReport, formatHummingContext } from '../humming-context';
+import { isSafeChatMessageTransfer, projectChatMessageForTransfer } from '../humming-transfer';
 import { conversationHistoryFromMessages } from '../conversation-history';
 import { hummingAttachment } from './fixtures/humming';
 
-const note = (startTimeSeconds: number, pitchMidi = 60) => ({
-  startTimeSeconds, durationSeconds: 0.5, pitchMidi, amplitude: 0.8,
-});
-
 describe('humming melody and transfer', () => {
-  it.each([1, 24, 25, 48, 72, 120, 512])('keeps %i pitch bend frames within the transfer limit', (length) => {
-    const result = selectHummingMelody([{ ...note(0), pitchBends: Array(length).fill(1) }], 5);
-    const attachment = hummingAttachment();
-    attachment.transcription.notes = result.notes;
-    attachment.transcription.warnings = result.warnings;
-    attachment.melodyDurationSeconds = result.melodyDurationSeconds;
-    const bends = result.notes[0].pitchBendsCents!;
-    expect(bends.length).toBeLessThanOrEqual(24);
-    expect(bends.length).toBeGreaterThan(0);
-    expect(projectHummingAttachment(attachment)).not.toBeNull();
-    expect(formatHummingContext('', attachment)).toContain('"pitch":"C4"');
+  it('preserves ordered takes across transfer and includes each phrase in the agent context', () => {
+    const first = hummingAttachment();
+    const second = { ...hummingAttachment(), id: '22222222-2222-4222-8222-222222222222' };
+    second.transcription.notes[0].pitchMidi = 67;
+    const message = {
+      id: 'user-1', role: 'user' as const, content: '', timestamp: 1,
+      humming: { ...first, additionalTakes: [second] },
+    };
+    const transferred = projectChatMessageForTransfer(message);
+    expect(transferred.humming?.additionalTakes).toEqual([second]);
+    const context = formatHummingContext('', transferred.humming);
+    expect(context).toMatch(/\[Humming take 1\][\s\S]+\[Humming take 2\][\s\S]+"pitch":"G4"/);
+    expect(buildHummingTurnReport({
+      ...first, understanding: { melodyStyle: 'Folk' }, additionalTakes: [second],
+    })).toMatchObject({ takes: [
+      { take: 1, interpretation_reference: { melodyStyle: 'Folk' } },
+      { take: 2, interpretation_reference: null, notes: expect.arrayContaining([expect.objectContaining({ pitch: 'G4' })]) },
+    ] });
+    expect(isSafeChatMessageTransfer({
+      ...message, humming: { ...first, additionalTakes: [{ ...second, blob: new Blob() }] },
+    })).toBe(false);
   });
 
-  it('joins weak-onset fragments while preserving deliberate repeated notes', () => {
-    const result = selectHummingMelody([
-      { ...note(0), durationSeconds: 0.25, onsetStrength: 0.8 },
-      { ...note(0.27), durationSeconds: 0.25, onsetStrength: 0.1 },
-      { ...note(0.54), durationSeconds: 0.25, onsetStrength: 0.8 },
-    ], 2);
-    expect(result.notes).toHaveLength(2);
-    expect(result.notes[0].durationSeconds).toBeCloseTo(0.52);
-    expect(result.notes[1].startSeconds).toBeCloseTo(0.54);
-  });
-
-  const heldNote = (start: number, pitch: number, duration: number, evidence: { hasStablePitch?: boolean; hasEnergyBreak?: boolean } = {}) => ({
-    ...note(start, pitch), durationSeconds: duration, onsetStrength: 0.15, ...evidence,
-  });
-
-  it('combines a short semitone excursion within one held note without losing its span', () => {
-    const result = selectHummingMelody([
-      heldNote(0.2, 60, 0.4),
-      heldNote(0.61, 61, 0.09),
-      heldNote(0.71, 60, 0.4),
-    ], 2);
-    expect(result.trimStartSeconds).toBeCloseTo(0.2);
-    expect(result.notes).toHaveLength(1);
-    expect(result.notes[0].pitchMidi).toBe(60);
-    expect(result.notes[0].durationSeconds).toBeCloseTo(0.91);
-  });
-
-  it('preserves stable short notes and legato changes that settle on a new pitch', () => {
-    const result = selectHummingMelody([
-      heldNote(0, 60, 0.4),
-      heldNote(0.4, 61, 0.12, { hasStablePitch: true }),
-      heldNote(0.52, 60, 0.3),
-      heldNote(0.82, 62, 0.4),
-    ], 2);
-    expect(result.notes.map(value => value.pitchMidi)).toEqual([60, 61, 60, 62]);
-  });
-
-  it('keeps weak same-pitch reattacks when the audio falls quiet between them', () => {
-    const result = selectHummingMelody([
-      heldNote(0, 60, 0.4),
-      heldNote(0.42, 60, 0.4, { hasEnergyBreak: true }),
-    ], 2);
-    expect(result.notes).toHaveLength(2);
+  it('keeps every SDK note, including simultaneous pitches and repeated attacks', () => {
+    const frames = Array.from({ length: 120 }, () => Array<number>(88).fill(0));
+    const onsets = frames.map(frame => frame.slice());
+    for (const [pitch, start, end] of [[60, 8, 28], [60, 29, 46], [72, 8, 34], [64, 70, 90]]) {
+      for (let frame = start; frame < end; frame += 1) frames[frame][pitch - 21] = 0.8;
+      onsets[start][pitch - 21] = 0.9;
+    }
+    const expected = noteFramesToTime(outputToNotesPoly(frames, onsets))
+      .sort((left, right) => left.startTimeSeconds - right.startTimeSeconds);
+    const result = decodeHummingMelody(frames, onsets);
+    expect(expected).toHaveLength(4);
+    expect(result.notes.map(note => note.pitchMidi)).toEqual(expected.map(note => note.pitchMidi));
+    for (const [index, note] of result.notes.entries()) {
+      expect(result.trimStartSeconds + note.startSeconds).toBeCloseTo(expected[index].startTimeSeconds, 12);
+      expect(note.durationSeconds).toBe(expected[index].durationSeconds);
+    }
   });
 
   it('estimates the grid from repeated onsets when short articulation makes durations misleading', () => {
@@ -79,14 +59,6 @@ describe('humming melody and transfer', () => {
     expect(data.notes.map((value: { start_tick: number }) => value.start_tick)).toEqual([0, 2, 4]);
   });
 
-  it('preserves a rest even when the following onset is weak', () => {
-    const result = selectHummingMelody([
-      { ...note(0), durationSeconds: 0.2, onsetStrength: 0.7 },
-      { ...note(0.35), durationSeconds: 0.2, onsetStrength: 0.1 },
-    ], 2);
-    expect(result.notes).toHaveLength(2);
-  });
-
   it('supplies integer beat-grid positions and requests integer Strudel weights', () => {
     const attachment = hummingAttachment();
     attachment.transcription.notes = [
@@ -95,36 +67,43 @@ describe('humming melody and transfer', () => {
     ];
     attachment.melodyDurationSeconds = 1;
     const context = formatHummingContext('', attachment);
+    expect(context).toContain('Create one Strudel melody layer from this hummed phrase.');
+    expect(context).toContain('single monophonic humming layer with one instrument');
     expect(context).toContain('"start_tick":3');
     expect(context).toContain('"duration_ticks":2');
     expect(context).toContain('integer @ weights only');
     expect(context).toContain('"pitch":"C4"');
     expect(context).toContain('"pitch":"D4"');
     expect(context).not.toContain('pitch_bends_cents');
-    expect(context).toContain('.s("piano")');
+    expect(context).not.toContain('.s("piano")');
   });
 
-  it('retains both phrases and their internal rest', () => {
-    const result = selectHummingMelody([note(0), note(0.6), note(3), note(3.6)], 5);
-    expect(result.notes.map((value) => value.startSeconds)).toEqual([0, 0.6, 3, 3.6]);
-    expect(result.melodyDurationSeconds).toBeCloseTo(4.1);
-  });
-
-  it('retains phrases across a long rest without shifting their timing', () => {
-    const result = selectHummingMelody([note(2), note(2.6), note(25), note(25.6)], 30);
-    expect(result.trimStartSeconds).toBe(2);
-    expect(result.notes).toHaveLength(4);
-    [0, 0.6, 23, 23.6].forEach((start, index) => {
-      expect(result.notes[index].startSeconds).toBeCloseTo(start);
-    });
-  });
-
-  it('preserves validated melody metadata across JSON transfer and later history', () => {
-    const message = { id: 'user-1', role: 'user' as const, content: '', timestamp: 1, humming: hummingAttachment() };
+  it('keeps the style from legacy understanding metadata across transfer and later history', () => {
+    const reference = {
+      melodyStyle: 'Mellow folk with a fingerpicked guitar lead',
+      bpm: '96',
+      timeSignature: '4/4',
+      chords: 'unknown',
+      key: 'C major',
+      rhythm: 'Two short phrases separated by a pause.',
+    };
+    const message = {
+      id: 'user-1', role: 'user' as const, content: '', timestamp: 1,
+      humming: { ...hummingAttachment(), understanding: reference },
+    };
     const restored = JSON.parse(JSON.stringify(projectChatMessageForTransfer(message)));
     expect(isSafeChatMessageTransfer(restored)).toBe(true);
-    expect(restored.humming).toEqual(message.humming);
-    expect(conversationHistoryFromMessages([restored])[0].content).toContain('"pitch":"C4"');
+    const style = { melodyStyle: reference.melodyStyle };
+    expect(restored.humming).toEqual({ ...message.humming, understanding: style });
+    const context = conversationHistoryFromMessages([restored])[0].content;
+    expect(context).toContain('"pitch":"C4"');
+    expect(context).toContain('Use the melody style in interpretation_reference');
+    expect(context).toContain('only when the user explicitly requests it in this turn');
+    const data = JSON.parse(context.split('\n').find(line => line.startsWith('{'))!);
+    expect(data.interpretation_reference).toEqual(style);
+    expect(isSafeChatMessageTransfer({
+      ...message, humming: { ...message.humming, understanding: { ...reference, notes: 'G8' } },
+    })).toBe(false);
   });
 
   it.each(['blob', 'pcm', 'audioUrl', 'localPath'])('rejects local-only %s in a melody attachment', (field) => {
@@ -135,4 +114,16 @@ describe('humming melody and transfer', () => {
     expect(isSafeChatMessageTransfer(message)).toBe(false);
     expect(() => projectChatMessageForTransfer(message)).toThrow('Unsafe');
   });
+});
+
+ it('preserves main branch image attachments, choice markers and layer notes in transfers', () => {
+  const message = {
+    id: 'combined', role: 'user' as const, content: 'arrange', timestamp: 1,
+    selectedChoice: true as const, layerNotes: { piano: 'Warm piano' },
+    images: [{ id: 'image', name: 'score.jpg', mimeType: 'image/jpeg', width: 100, height: 100,
+      size: 1000, path: 'owner/image.jpg', publicUrl: 'https://example.com/score.jpg' }],
+    humming: hummingAttachment(),
+  };
+  expect(isSafeChatMessageTransfer(message)).toBe(true);
+  expect(projectChatMessageForTransfer(message)).toEqual(message);
 });

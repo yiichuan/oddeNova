@@ -1327,7 +1327,7 @@ export default function App() {
     sessionId: sessions.currentId,
     busy: isLoading || isReplaying || isVideoMode || isDemoMode(),
     pauseTransport: strudel.pause,
-    onSend: handleChatInstruction,
+    onSend: (text, entryPoint, attachment) => handleChatInstruction(text, entryPoint, undefined, attachment),
   });
   const {
     stopRecording: stopHummingRecording,
@@ -2584,6 +2584,9 @@ export default function App() {
               key={sessions.currentId ?? 'default'}
               ownerKey={ownerKey}
               messages={messages}
+              pendingHumming={hummingInput.pendingSubmission}
+              hummingWaveformToolCalled={hummingInput.waveformToolCalled}
+              onCancelHumming={cancelHummingTranscription}
               revisions={sessions.currentSession?.revisions}
               isLoading={isLoading}
               onRollback={handleRollback}

@@ -302,6 +302,7 @@ vi.mock('../components/conversation/ConversationView', () => ({
   default: () => null,
   MarkdownText: ({ content }: { content: string }) => content,
   UserMessageBubble: ({ content }: { content: string }) => content,
+  MessageHummingCards: () => null,
 }));
 vi.mock('../components/conversation/HistoryPanel', () => ({ default: (props: Record<string, unknown>) => {
   mocks.historyProps = props;

@@ -1,4 +1,4 @@
-import type { ImageAttachment } from '../lib/image-attachments';
+import type { ImageAttachment } from '../lib/image-types';
 // Type definitions for chat messages — shared by useSessions and the
 // conversation/sidebar components. The legacy useChat() hook was removed in
 // favour of useSessions(), which owns the persisted, multi-session message

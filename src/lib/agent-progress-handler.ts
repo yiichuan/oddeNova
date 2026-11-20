@@ -120,6 +120,8 @@ export function createBatchedAgentProgressHandler(
 
 function formatToolCall(name: string, args: Record<string, unknown>): string {
   switch (name) {
+    case 'analyzeHummingWaveform':
+      return t('hummingReadingWaveform');
     case 'setCode':
       return t('arrangeMusic');
     case 'getScore':

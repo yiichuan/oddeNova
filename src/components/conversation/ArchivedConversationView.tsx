@@ -6,7 +6,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { t } from '../../lib/i18n';
 import { takeLabel } from '../../lib/favorite-conversations';
 import { ChevronRightIcon, PlayIcon, StopIcon } from '../icons';
-import { MarkdownText, UserMessageBubble } from './ConversationView';
+import { MarkdownText, MessageHummingCards, UserMessageBubble } from './ConversationView';
 import { useScrollActivity } from '../../hooks/useScrollActivity';
 
 /** How long the bar stays up after the last scroll, in ms — the mobile code
@@ -510,9 +510,14 @@ export default function ArchivedConversationView({
                 data-favorites-turn={message.id}
                 className="flex justify-end items-end gap-1.5 animate-fade-in"
               >
-                <div className={`relative flex min-w-0 ${message.humming ? 'w-[280px] max-w-[85%]' : 'max-w-[85%]'} flex-col items-end gap-2 ${bodyText} text-text-primary`}>
+                <div className={`flex min-w-0 max-w-[85%] flex-col items-end gap-2 ${bodyText} text-text-primary`}>
                   {Boolean(message.images?.length) && <div className="max-w-full [&>div]:justify-end [&>div]:py-0"><MessageImages images={message.images} /></div>}
-                  {(message.content.trim() || message.humming) && <div className="max-w-full rounded-[6px] bg-message-user px-3 py-2"><UserMessageBubble content={message.content} humming={message.humming} ownerKey={ownerKey} /></div>}
+                  <MessageHummingCards humming={message.humming} ownerKey={ownerKey} />
+                  {message.content.trim() && (
+                    <div className="max-w-full rounded-[6px] bg-message-user px-3 py-2">
+                      <UserMessageBubble content={message.content} />
+                    </div>
+                  )}
                 </div>
               </div>
             );

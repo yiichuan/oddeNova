@@ -4,7 +4,7 @@ import { openDB, type IDBPDatabase } from 'idb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '../../hooks/useSessions';
 import { hummingAttachment, hummingDraft } from './fixtures/humming';
-import { clearHummingDraft, discardHummingDraft, deleteHummingDataForSession, getHummingAsset, getHummingDraft, replaceHummingDraftIfPersistent, saveHummingDraft } from '../humming-storage';
+import { clearHummingDraft, discardHummingDraft, deleteHummingDataForSession, getEarlierHummingDrafts, getHummingAsset, getHummingDraft, replaceHummingDraftIfPersistent, saveHummingDraft } from '../humming-storage';
 
 let db: IDBPDatabase;
 let storageUnavailable = false;
@@ -36,6 +36,20 @@ beforeEach(async () => {
     });
   });
 afterEach(() => { db?.close(); vi.unstubAllGlobals(); });
+
+  it('persists takes in order and removes only the selected recording', async () => {
+    const first = hummingDraft();
+    const second = { ...first, id: '22222222-2222-4222-8222-222222222222' };
+    await saveHummingDraft(first);
+    await saveHummingDraft(second, true);
+    expect((await getEarlierHummingDrafts('guest', 'source')).map(take => take.id)).toEqual([first.id]);
+    expect((await getHummingDraft('guest', 'source'))?.id).toBe(second.id);
+
+    await discardHummingDraft('guest', 'source', second.id);
+    expect(await getHummingAsset('guest', second.id)).toBeNull();
+    expect((await getHummingDraft('guest', 'source'))?.id).toBe(first.id);
+    expect(await getEarlierHummingDrafts('guest', 'source')).toEqual([]);
+  });
 
   it('keeps a branch recording after deleting its source, then removes it after the last branch', async () => {
     await saveHummingDraft(hummingDraft());

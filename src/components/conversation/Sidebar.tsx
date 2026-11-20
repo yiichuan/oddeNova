@@ -265,6 +265,9 @@ export default function Sidebar({
             key={currentId ?? 'default'}
             ownerKey={ownerKey}
             messages={messages}
+            pendingHumming={humming?.pendingSubmission}
+            hummingWaveformToolCalled={humming?.waveformToolCalled}
+            onCancelHumming={humming?.cancelTranscription}
             revisions={revisions}
             isLoading={isLoading && !isReplaying}
             isVideoMode={isVideoMode}

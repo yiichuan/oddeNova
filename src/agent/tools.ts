@@ -5,6 +5,8 @@
 
 import { parseScore } from './parser';
 import { validateCodeRuntime, validateCodeTranspiler, normalizeCode } from '../services/strudel';
+import { buildHummingTurnReport, hasHummingWaveformReport } from '../lib/humming-context';
+import type { HummingAttachment } from '../types/humming';
 import { normalizeGmSampleNames } from '../lib/sample-allowlist';
 
 export interface AgentState {
@@ -15,6 +17,7 @@ export interface AgentState {
 export interface ToolContext {
   state: AgentState;
   isZh?: boolean;
+  humming?: HummingAttachment;
 }
 
 export interface ToolResult {
@@ -204,6 +207,18 @@ export const TOOLS: ToolDef[] = [
   },
 
   {
+    name: 'analyzeHummingWaveform',
+    description: 'Read the waveform analysis and available style reference for each humming take attached to the current turn.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    handler: (_args, ctx) => {
+      if (!hasHummingWaveformReport(ctx.humming)) {
+        return { ok: false, error: ctx.isZh ? '当前消息没有可分析的哼唱录音' : 'This turn has no analyzed humming recording' };
+      }
+      return { ok: true, data: buildHummingTurnReport(ctx.humming) };
+    },
+  },
+
+  {
     name: 'commit',
     description:
       '终止本次 agent 循环，把最终代码交给播放器 hot-reload 播放。必须在所有编辑完成且 validate 通过后调用。一次会话内只能调用一次。',
@@ -259,6 +274,10 @@ const TOOL_SCHEMAS_ZH = {
       explanation: '【必填】用你的人格口吻、一句话现在进行时说明这一步 setCode 在做什么，会作为进度消息展示给用户。如 "加上完整 mask 编排，intro→drop 结构" / "给 bass 加一层低通滤波"。',
     },
   },
+  analyzeHummingWaveform: {
+    description: '按录制顺序读取当前消息每段哼唱的时间轴、音高、时长、休止、音量、音高轮廓与可用的风格参考。速度与拍号仅在线索充足时提供估计。',
+    params: {},
+  },
   commit: {
     description:
       '终止本次 agent 循环，把最终代码交给播放器 hot-reload 播放。必须在所有编辑完成且 validate 通过后调用。一次会话内只能调用一次。',
@@ -286,6 +305,10 @@ const TOOL_SCHEMAS_EN = {
       explanation: '[Required] In your persona voice, one present-tense sentence describing what this setCode step is doing; shown to the user as a progress message. E.g. "Adding the full mask arrangement, intro→drop structure" / "Adding a low-pass filter to the bass".',
     },
   },
+  analyzeHummingWaveform: {
+    description: 'Read estimated pitches, recording-relative timing, rests, dynamics, pitch contours, and available style references for the attached takes in recording order. Tempo and meter estimates are supplied when supported.',
+    params: {},
+  },
   commit: {
     description:
       'Terminate the agent loop and hand the final code to the player for hot-reload playback. Must be called after all edits are complete and validate has passed. Can only be called once per session.',
@@ -298,12 +321,12 @@ const TOOL_SCHEMAS_EN = {
 };
 
 // OpenAI ChatCompletion `tools` array.
-export function getOpenAIToolSchemas(isZh = true): Array<{
+export function getOpenAIToolSchemas(isZh = true, hasHummingWaveform = false): Array<{
   type: 'function';
   function: { name: string; description: string; parameters: Record<string, unknown> };
 }> {
   const schemas = isZh ? TOOL_SCHEMAS_ZH : TOOL_SCHEMAS_EN;
-  return TOOLS.map((t) => {
+  return TOOLS.filter(tool => hasHummingWaveform || tool.name !== 'analyzeHummingWaveform').map((t) => {
     const s = schemas[t.name as keyof typeof schemas];
     // Merge bilingual param descriptions into a copy of the original parameters schema.
     const parameters = {

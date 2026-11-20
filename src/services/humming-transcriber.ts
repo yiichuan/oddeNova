@@ -1,112 +1,84 @@
-import {
-  BASIC_PITCH_MODEL_VERSION,
-  HUMMING_PREPROCESSING_VERSION,
-  type HummingMelodyResult,
-  type HummingWorkerProgressStage,
-} from '../types/humming';
+import { HUMMING_WAVEFORM_TOOL, hummingWaveformTool, parseHummingToolResult } from '../../shared/humming-waveform-tool';
+import type { ChatMsg } from '../agent/loop';
+import type { HummingMelodyResult, HummingModelRhythm } from '../types/humming';
+import { measureHummingRecording } from './humming-measurement';
+import { getActiveLLMCaller } from './llm';
+import { getActiveModelConfig } from './llm-config';
 
-interface TranscribeOptions {
-  recordingDurationSeconds: number;
-  sampleRate: number;
-  signal?: AbortSignal;
-  onProgress?: (stage: HummingWorkerProgressStage, progress: number) => void;
-  timeoutMs?: number;
-}
+const readWaveform = {
+  type: 'function' as const,
+  function: {
+    name: HUMMING_WAVEFORM_TOOL,
+    description: 'Measure the current recording and return the pitch and energy of each audio frame.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+  },
+};
+const submitTranscription = {
+  ...hummingWaveformTool,
+  function: { ...hummingWaveformTool.function, name: 'submitHummingTranscription' },
+};
 
-type WorkerMessage =
-  | {
-      type: 'progress';
-      jobId: string;
-      stage: HummingWorkerProgressStage;
-      progress: number;
-    }
-  | {
-      type: 'result';
-      jobId: string;
-      modelVersion: typeof BASIC_PITCH_MODEL_VERSION;
-      preprocessingVersion: typeof HUMMING_PREPROCESSING_VERSION;
-      result: HummingMelodyResult;
-    }
-  | { type: 'error'; jobId: string; code: string };
+export async function transcribeHumming(
+  recording: Blob,
+  signal: AbortSignal,
+  onWaveformToolCall?: () => void,
+): Promise<{ result: HummingMelodyResult; modelRhythm: HummingModelRhythm; modelVersion: string }> {
+  const modelVersion = getActiveModelConfig().model;
+  const llm = getActiveLLMCaller();
+  const messages: ChatMsg[] = [{
+    role: 'system',
+    content: 'Transcribe solo humming from frame measurements. Read the recording using analyzeHummingWaveform, then submit the estimated notes using submitHummingTranscription. First call only the read tool. After reading, call only the submit tool. Keep notes in chronological, non-overlapping order, with timestamps from the start of the recording. Use fractional MIDI for interpreting the contour and whole MIDI pitches for the notes. Preserve separate attacks even when the pitch repeats. Treat a continuous slide or vibrato as one note unless there is evidence of a new attack. Energy dips and renewed high-frequency energy can mark reattacks. Leave silence and breaths out. Return empty notes when there is no clear melody and leave BPM or meter null when unsupported.',
+  }, { role: 'user', content: 'Transcribe this humming recording.' }];
 
-export interface HummingTranscription {
-  modelVersion: typeof BASIC_PITCH_MODEL_VERSION;
-  preprocessingVersion: typeof HUMMING_PREPROCESSING_VERSION;
-  result: HummingMelodyResult;
-}
+  const request = await llm.chatWithTools(messages, [readWaveform], undefined, undefined, signal, false);
+  const [call] = request.toolCalls;
+  if (request.toolCalls.length !== 1 || call.name !== HUMMING_WAVEFORM_TOOL) throw new Error('invalid_result');
 
-export class HummingTranscriptionError extends Error {
-  readonly code: string;
-
-  constructor(code: string) {
-    super(code);
-    this.name = 'HummingTranscriptionError';
-    this.code = code;
-  }
-}
-
-export function transcribeHumming(
-  pcm: Float32Array,
-  options: TranscribeOptions,
-): Promise<HummingTranscription> {
-  if (typeof Worker === 'undefined') {
-    return Promise.reject(new HummingTranscriptionError('worker_unavailable'));
-  }
-  if (options.signal?.aborted) {
-    return Promise.reject(new HummingTranscriptionError('cancelled'));
-  }
-
-  const worker = new Worker(
-    new URL('../workers/humming-transcription.worker.ts', import.meta.url),
-    { type: 'module', name: 'humming-transcription' },
-  );
-  const jobId = crypto.randomUUID();
-  const samples = pcm.slice();
-  const timeoutMs = options.timeoutMs ?? 180_000;
-
-  return new Promise<HummingTranscription>((resolve, reject) => {
-    let settled = false;
-    const cleanup = () => {
-      window.clearTimeout(timeoutId);
-      options.signal?.removeEventListener('abort', handleAbort);
-      worker.terminate();
-    };
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      callback();
-    };
-    const handleAbort = () => finish(() => reject(new HummingTranscriptionError('cancelled')));
-    const timeoutId = window.setTimeout(
-      () => finish(() => reject(new HummingTranscriptionError('timeout'))),
-      timeoutMs,
-    );
-
-    options.signal?.addEventListener('abort', handleAbort, { once: true });
-    worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
-      const message = event.data;
-      if (!message || message.jobId !== jobId) return;
-      if (message.type === 'progress') {
-        options.onProgress?.(message.stage, message.progress);
-      } else if (message.type === 'result') {
-        finish(() => resolve({
-          modelVersion: message.modelVersion,
-          preprocessingVersion: message.preprocessingVersion,
-          result: message.result,
-        }));
-      } else {
-        finish(() => reject(new HummingTranscriptionError(message.code)));
-      }
-    };
-    worker.onerror = () => finish(() => reject(new HummingTranscriptionError('worker_failed')));
-    worker.onmessageerror = () => finish(() => reject(new HummingTranscriptionError('worker_message_failed')));
-    worker.postMessage({
-      type: 'transcribe',
-      jobId,
-      samples: samples.buffer,
-      sampleRate: options.sampleRate,
-      recordingDurationSeconds: options.recordingDurationSeconds,
-    }, [samples.buffer]);
+  signal.throwIfAborted();
+  onWaveformToolCall?.();
+  const { csv, durationSeconds } = await measureHummingRecording(recording, signal);
+  messages.push({
+    role: 'assistant',
+    content: request.content,
+    reasoning_content: request.reasoning_content,
+    thinking_blocks: request.thinking_blocks,
+    tool_calls: [{ id: call.id, type: 'function', function: { name: call.name, arguments: call.arguments } }],
+  }, {
+    role: 'tool',
+    name: call.name,
+    tool_call_id: call.id,
+    content: `Recording duration: ${durationSeconds} s. CSV columns: time in milliseconds, fractional MIDI pitch (blank if unvoiced), level dB, high-frequency energy dB. Convert milliseconds to seconds for the submitted notes.\n${csv}`,
   });
+
+  const response = await llm.chatWithTools(messages, [submitTranscription], undefined, undefined, signal, false);
+  const [submission] = response.toolCalls;
+  if (response.toolCalls.length !== 1 || submission.name !== submitTranscription.function.name) {
+    throw new Error('invalid_result');
+  }
+
+  let output: unknown;
+  try {
+    output = JSON.parse(submission.arguments);
+  } catch {
+    throw new Error('invalid_result');
+  }
+  const report = parseHummingToolResult(output, durationSeconds);
+  if (!report) throw new Error('invalid_result');
+  const first = report.notes[0];
+  if (!first) throw new Error('no_melody_detected');
+
+  return {
+    result: {
+      trimStartSeconds: first.startSeconds,
+      melodyDurationSeconds: report.notes.at(-1)!.endSeconds - first.startSeconds,
+      notes: report.notes.map(({ endSeconds, ...note }) => ({
+        ...note,
+        startSeconds: note.startSeconds - first.startSeconds,
+        durationSeconds: endSeconds - note.startSeconds,
+      })),
+      warnings: report.notes.some(note => note.uncertain) ? ['ambiguous_melody'] : [],
+    },
+    modelRhythm: { bpm: report.bpm, timeSignature: report.timeSignature },
+    modelVersion,
+  };
 }

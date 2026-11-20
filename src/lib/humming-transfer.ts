@@ -1,11 +1,20 @@
+import { isImageAttachments } from './image-types.js';
+import { parseHummingModelRhythm } from '../../shared/humming-waveform-tool.js';
+import { parseMusicUnderstanding } from '../../shared/music-understanding.js';
 import type { ChatMessage } from '../hooks/useChat';
 import {
   BASIC_PITCH_MODEL_VERSION,
+  HUMMING_AGENT_PREPROCESSING_VERSION,
+  HUMMING_LLM_MODEL_VERSION,
+  HUMMING_LLM_PREPROCESSING_VERSION,
   HUMMING_MAX_ATTACHMENT_BYTES,
+  HUMMING_MAX_TAKES,
   HUMMING_MAX_NOTES,
   HUMMING_PREPROCESSING_VERSION,
   HUMMING_RECORDING_LIMIT_SECONDS,
   HUMMING_SCHEMA_VERSION,
+  HUMMING_WAVEFORM_VERSION,
+  HUMMING_WAVEFORM_PREPROCESSING_VERSION,
   type HummingAttachment,
   type HummingNote,
   type HummingWarning,
@@ -19,10 +28,14 @@ const ATTACHMENT_KEYS = new Set([
   'trimStartSeconds',
   'melodyDurationSeconds',
   'transcription',
+  'understanding',
+  'additionalTakes',
 ]);
+const UNDERSTANDING_KEYS = new Set(['melodyStyle', 'bpm', 'timeSignature', 'chords', 'key', 'rhythm']);
 const TRANSCRIPTION_KEYS = new Set([
   'engine',
   'modelVersion',
+  'modelRhythm',
   'preprocessingVersion',
   'notes',
   'warnings',
@@ -33,6 +46,7 @@ const NOTE_KEYS = new Set([
   'durationSeconds',
   'pitchBendsCents',
   'uncertain',
+  'levelDb',
 ]);
 const MESSAGE_KEYS = new Set([
   'id',
@@ -48,6 +62,9 @@ const MESSAGE_KEYS = new Set([
   'ok',
   'isGreeting',
   'humming',
+  'images',
+  'selectedChoice',
+  'layerNotes',
 ]);
 const WARNING_VALUES = new Set<HummingWarning>(['ambiguous_melody', 'low_signal']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -66,7 +83,7 @@ function finite(value: unknown): value is number {
 
 function normalizeNote(value: unknown, melodyDurationSeconds: number): HummingNote | null {
   if (!isRecord(value) || !hasOnlyKeys(value, NOTE_KEYS)) return null;
-  const { pitchMidi, startSeconds, durationSeconds, pitchBendsCents, uncertain } = value;
+  const { pitchMidi, startSeconds, durationSeconds, pitchBendsCents, uncertain, levelDb } = value;
   if (
     !finite(pitchMidi)
     || !Number.isInteger(pitchMidi)
@@ -77,6 +94,7 @@ function normalizeNote(value: unknown, melodyDurationSeconds: number): HummingNo
     || !finite(durationSeconds)
     || durationSeconds <= 0
     || startSeconds + durationSeconds > melodyDurationSeconds + 0.25
+    || (levelDb !== undefined && (!finite(levelDb) || levelDb < -120 || levelDb > 0))
     || (uncertain !== undefined && typeof uncertain !== 'boolean')
   ) return null;
 
@@ -95,6 +113,7 @@ function normalizeNote(value: unknown, melodyDurationSeconds: number): HummingNo
     startSeconds,
     durationSeconds,
     ...(bends ? { pitchBendsCents: bends } : {}),
+    ...(levelDb !== undefined ? { levelDb } : {}),
     ...(uncertain === true ? { uncertain: true } : {}),
   };
 }
@@ -109,6 +128,7 @@ export function projectHummingAttachment(value: unknown): HummingAttachment | nu
     trimStartSeconds,
     melodyDurationSeconds,
     transcription,
+    understanding: rawUnderstanding,
   } = value;
   if (
     kind !== 'humming'
@@ -125,9 +145,6 @@ export function projectHummingAttachment(value: unknown): HummingAttachment | nu
     || trimStartSeconds + melodyDurationSeconds > recordingDurationSeconds + 0.25
     || !isRecord(transcription)
     || !hasOnlyKeys(transcription, TRANSCRIPTION_KEYS)
-    || transcription.engine !== 'basic-pitch'
-    || transcription.modelVersion !== BASIC_PITCH_MODEL_VERSION
-    || transcription.preprocessingVersion !== HUMMING_PREPROCESSING_VERSION
     || !Array.isArray(transcription.notes)
     || transcription.notes.length === 0
     || transcription.notes.length > HUMMING_MAX_NOTES
@@ -135,11 +152,41 @@ export function projectHummingAttachment(value: unknown): HummingAttachment | nu
     || transcription.warnings.some((warning) => !WARNING_VALUES.has(warning as HummingWarning))
   ) return null;
 
+  const modelRhythm = transcription.engine === 'audio-llm'
+    ? parseHummingModelRhythm(transcription.modelRhythm) : null;
+  if (transcription.engine !== 'audio-llm' && transcription.modelRhythm !== undefined) return null;
+  const engineMetadata = transcription.engine === 'basic-pitch'
+    && transcription.modelVersion === BASIC_PITCH_MODEL_VERSION
+    && transcription.preprocessingVersion === HUMMING_PREPROCESSING_VERSION
+    ? { engine: 'basic-pitch', modelVersion: BASIC_PITCH_MODEL_VERSION, preprocessingVersion: HUMMING_PREPROCESSING_VERSION } as const
+    : transcription.engine === 'waveform'
+      && transcription.modelVersion === HUMMING_WAVEFORM_VERSION
+      && transcription.preprocessingVersion === HUMMING_WAVEFORM_PREPROCESSING_VERSION
+      ? { engine: 'waveform', modelVersion: HUMMING_WAVEFORM_VERSION, preprocessingVersion: HUMMING_WAVEFORM_PREPROCESSING_VERSION } as const
+      : transcription.engine === 'audio-llm'
+        && typeof transcription.modelVersion === 'string'
+        && /^[a-z0-9][a-z0-9._:/-]{0,127}$/i.test(transcription.modelVersion)
+        && (transcription.preprocessingVersion === HUMMING_AGENT_PREPROCESSING_VERSION
+          || (transcription.preprocessingVersion === HUMMING_LLM_PREPROCESSING_VERSION
+            && transcription.modelVersion === HUMMING_LLM_MODEL_VERSION))
+        && modelRhythm
+        ? { engine: 'audio-llm', modelVersion: transcription.modelVersion, preprocessingVersion: transcription.preprocessingVersion, modelRhythm } as const
+        : null;
+  if (!engineMetadata) return null;
+
   const notes = transcription.notes.map((note) => normalizeNote(note, melodyDurationSeconds));
   if (notes.some((note) => !note)) return null;
   for (let index = 1; index < notes.length; index += 1) {
     if (notes[index]!.startSeconds < notes[index - 1]!.startSeconds) return null;
   }
+
+  const understanding = parseMusicUnderstanding(rawUnderstanding);
+  if (rawUnderstanding !== undefined && (
+    !isRecord(rawUnderstanding)
+    || !hasOnlyKeys(rawUnderstanding, UNDERSTANDING_KEYS)
+    || !understanding
+    || Object.values(rawUnderstanding).some(value => typeof value !== 'string' || !value.trim() || value.length > 1200)
+  )) return null;
 
   const attachment: HummingAttachment = {
     kind: 'humming',
@@ -148,16 +195,35 @@ export function projectHummingAttachment(value: unknown): HummingAttachment | nu
     recordingDurationSeconds,
     trimStartSeconds,
     melodyDurationSeconds,
+    ...(understanding ? { understanding } : {}),
     transcription: {
-      engine: 'basic-pitch',
-      modelVersion: BASIC_PITCH_MODEL_VERSION,
-      preprocessingVersion: HUMMING_PREPROCESSING_VERSION,
+      ...engineMetadata,
       notes: notes as HummingNote[],
       warnings: [...new Set(transcription.warnings as HummingWarning[])],
     },
   };
   if (new Blob([JSON.stringify(attachment)]).size > HUMMING_MAX_ATTACHMENT_BYTES) return null;
+  if (value.additionalTakes !== undefined) {
+    if (!Array.isArray(value.additionalTakes) || value.additionalTakes.length === 0
+      || value.additionalTakes.length >= HUMMING_MAX_TAKES) return null;
+    const ids = new Set([attachment.id]);
+    const takes: HummingAttachment[] = [];
+    for (const raw of value.additionalTakes) {
+      if (!isRecord(raw) || 'additionalTakes' in raw) return null;
+      const take = projectHummingAttachment(raw);
+      if (!take || ids.has(take.id)) return null;
+      ids.add(take.id);
+      takes.push(take);
+    }
+    attachment.additionalTakes = takes;
+  }
   return attachment;
+}
+
+export function hummingTakes(attachment?: HummingAttachment): HummingAttachment[] {
+  if (!attachment) return [];
+  const { additionalTakes, ...first } = attachment;
+  return [first, ...(additionalTakes ?? [])];
 }
 
 export function isSafeChatMessageTransfer(value: unknown): boolean {
@@ -168,6 +234,14 @@ export function isSafeChatMessageTransfer(value: unknown): boolean {
     || typeof value.content !== 'string'
     || !finite(value.timestamp)
   ) return false;
+  if (value.images !== undefined) {
+    if (!Array.isArray(value.images) || !value.images.every(image => isRecord(image)
+      && (image.publicUrl === undefined || typeof image.publicUrl === 'string'))) return false;
+    if (!isImageAttachments(value.images.map(({ publicUrl: _publicUrl, ...image }) => image))) return false;
+  }
+  if (value.selectedChoice !== undefined && value.selectedChoice !== true) return false;
+  if (value.layerNotes !== undefined && (!isRecord(value.layerNotes)
+    || !Object.values(value.layerNotes).every(note => typeof note === 'string'))) return false;
   if (value.code !== undefined && typeof value.code !== 'string') return false;
   if (value.revisionId !== undefined && typeof value.revisionId !== 'string') return false;
   if (value.inputMode !== undefined && value.inputMode !== 'normal' && value.inputMode !== 'choice') return false;
@@ -193,6 +267,9 @@ export function projectChatMessageForTransfer(value: ChatMessage): ChatMessage {
     role: value.role,
     content: value.content,
     timestamp: value.timestamp,
+    ...(value.images !== undefined ? { images: value.images } : {}),
+    ...(value.selectedChoice ? { selectedChoice: value.selectedChoice } : {}),
+    ...(value.layerNotes !== undefined ? { layerNotes: value.layerNotes } : {}),
     ...(humming ? { humming } : {}),
     ...(value.code !== undefined ? { code: value.code } : {}),
     ...(value.revisionId !== undefined ? { revisionId: value.revisionId } : {}),

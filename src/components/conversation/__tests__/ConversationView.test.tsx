@@ -8,6 +8,7 @@ import type { CodeRevision } from '../../../hooks/useSessions';
 import ConversationView, { type GuidedReply } from '../ConversationView';
 import { DRAFT_SEGMENT_ID } from '../../../lib/draft-diff';
 import { t } from '../../../lib/i18n';
+import { hummingAttachment } from '../../../lib/__tests__/fixtures/humming';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -94,7 +95,7 @@ function renderConversationView(
   onRollback = vi.fn(),
   isLoading = false,
   revisions?: CodeRevision[],
-  playback: PlaybackProps = {},
+  playback: PlaybackProps & Pick<React.ComponentProps<typeof ConversationView>, 'pendingHumming' | 'hummingWaveformToolCalled' | 'onCancelHumming'> = {},
   ownerKey?: string,
 ) {
   const container = document.createElement('div');
@@ -1997,13 +1998,11 @@ describe('ConversationView humming attachments', () => {
     await act(async () => { await Promise.resolve(); });
 
     const bubble = container.querySelector<HTMLElement>('[data-rollback-bubble="user-humming"]')!;
-    expect(bubble.className).toContain('w-[280px]');
     expect(bubble.textContent).not.toContain('Humming recording');
-    expect(bubble.textContent).toContain('Original humming');
-    expect(bubble.textContent).toContain('0:12');
+    expect(bubble.textContent).toContain('Humming 01');
     expect(bubble.textContent).toContain('The original recording is no longer on this device');
     expect(bubble.querySelector('audio')).not.toBeNull();
-    expect(bubble.querySelector<HTMLInputElement>('input[type="range"]')?.disabled).toBe(true);
+    expect(bubble.querySelector<HTMLButtonElement>('[aria-label="Play Humming 01"]')?.disabled).toBe(true);
   });
 
   it('keeps the recording player outside the five-line text clamp', async () => {
@@ -2034,6 +2033,38 @@ describe('ConversationView humming attachments', () => {
     const bubble = container.querySelector<HTMLElement>('[data-rollback-bubble="long-humming-user"]')!;
     expect(bubble.querySelector('p')?.className).toContain('line-clamp-5');
     expect(bubble.querySelector('[data-humming-audio-player]')).not.toBeNull();
-    expect(bubble.querySelector('input[type="range"]')).not.toBeNull();
+    const card = bubble.querySelector('[data-humming-audio-player]')!;
+    const textBubble = bubble.querySelector('.bg-message-user')!;
+    expect(textBubble.contains(card)).toBe(false);
+    expect(card.compareDocumentPosition(textBubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('renders pending humming in the user turn and the tool status and results on the assistant side', async () => {
+    setMobileViewport(false);
+    hummingMocks.getHummingAsset.mockResolvedValue(null);
+    const onCancelHumming = vi.fn();
+    const { container, root, render } = renderConversationView([], vi.fn(), false, undefined, {
+      pendingHumming: {
+        id: 'pending', text: 'Arrange this', timestamp: 1, takeNumber: 1,
+        takes: [{ id: 'take', audioUrl: 'blob:take', durationSeconds: 2 }],
+      },
+      hummingWaveformToolCalled: true,
+      onCancelHumming,
+    });
+    roots.push(root);
+    const pending = container.querySelector('[data-rollback-bubble="pending"]')!;
+    expect(pending.querySelector('.bg-message-user')?.textContent).toBe('Arrange this');
+    expect(pending.querySelector('audio')?.getAttribute('src')).toBe('blob:take');
+    expect(pending.textContent).not.toContain('analyzeHummingWaveform');
+    expect(container.querySelector('[data-assistant-humming-progress]')?.textContent).toContain('analyzeHummingWaveform');
+
+    render({}, [
+      { id: 'sent', role: 'user', content: 'Arrange this', timestamp: 1, humming: hummingAttachment() },
+      { id: 'reply', role: 'assistant', content: 'Start with a soft piano.', timestamp: 2 },
+    ]);
+    await act(async () => { await Promise.resolve(); });
+    expect(container.querySelector('[data-assistant-humming-progress]')).toBeNull();
+    expect(container.querySelector('[data-message-id="reply"] [aria-label="Humming analysis"]')?.textContent).toContain('C4');
+    expect(container.querySelector('[data-rollback-bubble="sent"] [aria-label="Humming analysis"]')).toBeNull();
   });
 });
