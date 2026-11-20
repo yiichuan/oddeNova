@@ -17,6 +17,7 @@ function createMeter(stream: MediaStream | null) {
     const source = context.createMediaStreamSource(stream);
     // The microphone is only measured. There is no connection to the speakers.
     source.connect(analyser);
+    if (context.state === 'suspended') void context.resume().catch(() => {});
     return {
       read() {
         analyser.getFloatTimeDomainData(samples);

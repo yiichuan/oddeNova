@@ -535,10 +535,13 @@ const S: Record<string, readonly [string, string]> = {
   moodTooltip:   ['根据你最近的活动感知心情生成音乐', 'Generate music based on your recent mood and activity'],
   moodGenerate:  ['根据心情生成音乐', 'Mood-based music'],
 
-  // VoiceButton
-  voiceNotSupported: ['浏览器不支持语音识别，请使用 Chrome', 'Speech recognition not supported, please use Chrome'],
-  releaseToStop:     ['松开停止', 'Release to stop'],
-  holdToSpeak:       ['按住说话', 'Hold to speak'],
+  // Voice input
+  startVoiceInput:   ['语音输入', 'Voice input'],
+  voiceMicPermissionDenied: ['无法访问麦克风，请允许此网站使用麦克风', 'Microphone access was denied. Allow microphone access for this site.'],
+  voiceMicNotFound: ['未找到可用的麦克风', 'No microphone was found'],
+  voiceRecordingFailed: ['录音失败，请重试', 'Recording failed. Please try again.'],
+  voiceEmptyRecording: ['没有录到音频，请重试', 'No audio was captured. Please try again.'],
+  voiceTranscriptionFailed: ['转写失败', 'Transcription failed'],
 
   // strudel / engine
   clickToResume:   ['点击播放继续', 'Click to resume'],

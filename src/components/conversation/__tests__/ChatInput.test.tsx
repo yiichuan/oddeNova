@@ -882,30 +882,44 @@ describe('ChatInput humming recording controls', () => {
     expect(getSubmitButton(container).disabled).toBe(true);
   });
 
-  it('switches the voice recording action to progress until the recorder finishes', async () => {
+  it('keeps voice input available in choice mode and transcribes with the saved DeepSeek key', async () => {
     const stopTrack = vi.fn();
     const getUserMedia = vi.fn(async () => ({ getTracks: () => [{ stop: stopTrack }] }));
     let finishRecording = () => {};
     class TestMediaRecorder {
       static isTypeSupported() { return false; }
       state = 'inactive';
+      mimeType = 'audio/ogg';
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
       onstop: (() => void) | null = null;
       start() { this.state = 'recording'; }
       stop() {
         this.state = 'inactive';
-        finishRecording = () => this.onstop?.();
+        finishRecording = () => {
+          this.ondataavailable?.({ data: new Blob(['voice']) });
+          this.onstop?.();
+        };
       }
     }
     vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
     vi.stubGlobal('MediaRecorder', TestMediaRecorder);
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ text: 'add drums' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const previousProvider = localStorage.getItem('vibe_provider');
+    const previousKey = localStorage.getItem('vibe_api_key_deepseek');
+    localStorage.setItem('vibe_provider', 'openai');
+    localStorage.setItem('vibe_api_key_deepseek', 'saved-deepseek-key');
     try {
-      const { container, root } = renderChatInput({ humming: controller(), prefill: 'Voice prompt' });
+      const { container, root } = renderChatInput({ humming: controller(), inputMode: 'choice', prefill: 'Voice prompt' });
       roots.push(root);
+      const field = container.querySelector('textarea')!;
       const recordButton = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
       act(() => recordButton.click());
       await act(async () => container.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click());
 
       expect(getUserMedia).toHaveBeenCalledOnce();
+      expect(document.activeElement).toBe(recordButton);
+      expect(field.readOnly).toBe(true);
       expect(container.textContent).toContain('Recording voice');
       expect(container.querySelector('button[aria-label="Stop recording"]')).toBe(recordButton);
       expect(recordButton.parentElement?.getAttribute('data-expanded')).toBe('true');
@@ -915,17 +929,29 @@ describe('ChatInput humming recording controls', () => {
       act(() => recordButton.click());
       expect(recordButton.parentElement?.getAttribute('data-capture-phase')).toBe('receiving');
       expect(recordButton.getAttribute('aria-label')).toBe('Receiving');
+      expect(document.activeElement).toBe(container.querySelector('button[aria-label="Cancel recognition"]'));
+      expect(field.readOnly).toBe(true);
       expect(container.querySelector('.chat-recording-waveform')).toBeNull();
       expect(container.querySelector('.chat-recording-pill-progress .animate-spin')).not.toBeNull();
       expect(getSubmitButton(container).disabled).toBe(true);
 
-      act(finishRecording);
+      await act(async () => finishRecording());
       expect(stopTrack).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledWith('https://api.deepseek.com/v1/tools/asr', expect.objectContaining({
+        headers: { Authorization: 'Bearer saved-deepseek-key' },
+      }));
+      expect(field.value).toBe('Voice prompt add drums');
+      expect(field.readOnly).toBe(false);
+      expect(document.activeElement).toBe(field);
       expect(container.querySelector('button[aria-haspopup="menu"]')).toBe(recordButton);
       expect(recordButton.parentElement?.getAttribute('data-expanded')).toBe('false');
       expect(getSubmitButton(container).disabled).toBe(false);
       expect(getSubmitButton(container).querySelector('.lucide-message-circle-more')).toBeNull();
     } finally {
+      if (previousProvider === null) localStorage.removeItem('vibe_provider');
+      else localStorage.setItem('vibe_provider', previousProvider);
+      if (previousKey === null) localStorage.removeItem('vibe_api_key_deepseek');
+      else localStorage.setItem('vibe_api_key_deepseek', previousKey);
       vi.unstubAllGlobals();
     }
   });

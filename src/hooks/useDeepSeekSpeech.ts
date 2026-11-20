@@ -107,6 +107,7 @@ export function useDeepSeekSpeech(onResult: (text: string) => void) {
         if (sessionId !== sessionRef.current) return;
 
         if (chunks.length === 0) {
+          setError('EMPTY_RECORDING');
           setMode('idle');
           setStartedAt(null);
           setElapsedSeconds(0);
