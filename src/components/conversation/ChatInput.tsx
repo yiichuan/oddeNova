@@ -987,7 +987,7 @@ export default function ChatInput({
 
           {/* Footer row — attachments and status on the left, send on the right.
               Real layout, always visible regardless of textarea scroll state. */}
-          <div className="flex items-center gap-2 px-2 pt-1 pb-2">
+          <div className="relative z-20 flex items-center gap-2 px-2 pt-1 pb-2">
             {!presetLock && !isVideoMode && replayValue === undefined && (
               <button
                 type="button"
