@@ -59,6 +59,7 @@ const MESSAGE_KEYS = new Set([
   'timestamp',
   'progressKind',
   'toolName',
+  'sampleSearchSummary',
   'ok',
   'isGreeting',
   'humming',
@@ -248,6 +249,11 @@ export function isSafeChatMessageTransfer(value: unknown): boolean {
   if (value.agentAttemptId !== undefined && typeof value.agentAttemptId !== 'string') return false;
   if (value.progressKind !== undefined && typeof value.progressKind !== 'string') return false;
   if (value.toolName !== undefined && typeof value.toolName !== 'string') return false;
+  if (value.sampleSearchSummary !== undefined && (!Array.isArray(value.sampleSearchSummary)
+    || !value.sampleSearchSummary.every(item => isRecord(item)
+      && Object.keys(item).every(key => key === 'query' || key === 'labels')
+      && typeof item.query === 'string'
+      && Array.isArray(item.labels) && item.labels.every(label => typeof label === 'string')))) return false;
   if (value.ok !== undefined && typeof value.ok !== 'boolean') return false;
   if (value.isGreeting !== undefined && typeof value.isGreeting !== 'boolean') return false;
   // Only derived melody metadata can leave the device; raw recordings and
@@ -277,6 +283,7 @@ export function projectChatMessageForTransfer(value: ChatMessage): ChatMessage {
     ...(value.agentAttemptId !== undefined ? { agentAttemptId: value.agentAttemptId } : {}),
     ...(value.progressKind !== undefined ? { progressKind: value.progressKind } : {}),
     ...(value.toolName !== undefined ? { toolName: value.toolName } : {}),
+    ...(value.sampleSearchSummary !== undefined ? { sampleSearchSummary: value.sampleSearchSummary } : {}),
     ...(value.ok !== undefined ? { ok: value.ok } : {}),
     ...(value.isGreeting !== undefined ? { isGreeting: value.isGreeting } : {}),
   };

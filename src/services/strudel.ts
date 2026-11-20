@@ -7,7 +7,7 @@ import { encodeWav16 } from '../lib/wav';
 import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
-import { loadSampleIndex } from '../lib/sample-index-hosts';
+import { FEATURED_SAMPLE_INDEX, loadSampleIndex } from '../lib/sample-index-hosts';
 import {
   buildPreviewEvent,
   describeRegisteredSound,
@@ -512,6 +512,7 @@ export class StrudelService {
           loadModules,
           registerSynthSounds(),
           loadSampleIndex(samples, '/sample-index/dirt-samples.json'),
+          samples(FEATURED_SAMPLE_INDEX),
           loadSampleIndex(samples, '/sample-index/tidal-drum-machines.json'),
           loadSampleIndex(samples, '/sample-index/piano.json'),
           loadSampleIndex(samples, '/sample-index/vcsl.json'),

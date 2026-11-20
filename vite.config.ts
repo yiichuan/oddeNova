@@ -14,6 +14,8 @@ import asrHandler from './api/official/v1/tools/asr'
 import musicUnderstandingHandler from './api/official/v1/tools/music-understanding'
 import { MUSIC_UNDERSTANDING_PATH } from './shared/music-understanding'
 import { privacyRouteMiddleware } from './server/privacy-route'
+import { sampleAnnotationEditor } from './server/sample-annotation-editor'
+import { localDevTools } from './server/local-dev-tools'
 import { vcslProxyHandler } from './server/vcsl-proxy'
 import { EnvHttpProxyAgent, setGlobalDispatcher } from 'undici'
 
@@ -579,7 +581,7 @@ export default defineConfig(({ command, isPreview, mode }) => {
       'import.meta.env.VITE_APP_ENVIRONMENT': JSON.stringify(process.env.VERCEL_ENV || (command === 'serve' ? 'development' : 'production')),
     },
     cacheDir: `node_modules/.vite/${mode}-${patchHash.digest('hex').slice(0, 12)}`,
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), vcslDevMiddleware(), syncAnimationHtml(), basicPitchModelAssets(), privacyDevMiddleware()],
+    plugins: [localDevTools(), sampleAnnotationEditor(), react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), vcslDevMiddleware(), syncAnimationHtml(), basicPitchModelAssets(), privacyDevMiddleware()],
     build: {
       // Manifest powers scripts/report-bundle-size.mjs (analyze:bundle) so the
       // entry-asset closure can be measured reproducibly. No runtime cost.
