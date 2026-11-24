@@ -1,3 +1,5 @@
+import { hummingAttachment } from '../../src/lib/__tests__/fixtures/humming';
+import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const supabaseMocks = vi.hoisted(() => ({
@@ -6,7 +8,8 @@ const supabaseMocks = vi.hoisted(() => ({
   from: vi.fn(),
 }));
 
-vi.mock('@supabase/supabase-js', () => ({
+vi.mock('@supabase/supabase-js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@supabase/supabase-js')>(),
   createClient: supabaseMocks.createClient.mockImplementation(() => ({
     auth: { getUser: supabaseMocks.getUser },
     from: supabaseMocks.from,
@@ -112,6 +115,22 @@ describe('sessions API auth and collection reads', () => {
 
     expect(res.statusCode).toBe(401);
     expect(res.body).toEqual({ error: 'Unauthorized' });
+    expect(supabaseMocks.from).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { error: new AuthRetryableFetchError('fetch failed', 0), status: 503, message: 'Authentication service unavailable' },
+    { error: new AuthRetryableFetchError('upstream unavailable', 502), status: 503, message: 'Authentication service unavailable' },
+    { error: new AuthApiError('token expired', 401, 'bad_jwt'), status: 401, message: 'Unauthorized' },
+  ])('returns $status when token verification reports $error.message', async ({ error, status, message }) => {
+    supabaseMocks.getUser.mockResolvedValue({ data: { user: null }, error });
+    const { default: handler } = await import('../../api/sessions.js');
+    const res = makeResponse();
+
+    await handler({ method: 'GET', query: {}, headers: { authorization: 'Bearer test-token' } } as never, res as never);
+
+    expect(res.statusCode).toBe(status);
+    expect(res.body).toEqual({ error: message });
     expect(supabaseMocks.from).not.toHaveBeenCalled();
   });
 
@@ -606,6 +625,26 @@ describe('sessions API auth and collection reads', () => {
     }), { onConflict: 'id' });
     expect(upsertRow).not.toHaveProperty('favorited_at');
     expect(res.statusCode).toBe(200);
+  });
+
+  it.each([false, true])('validates derived melody metadata and rejects raw audio (unsafe=%s)', async (unsafe) => {
+    supabaseMocks.getUser.mockResolvedValue({ data: { user: { id: 'u-1' } }, error: null });
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    supabaseMocks.from.mockReturnValue({ upsert });
+    const humming = { ...hummingAttachment(), ...(unsafe ? { blob: 'raw audio' } : {}) };
+    const { default: handler } = await import('../../api/sessions.js');
+    const res = makeResponse();
+    await handler({
+      method: 'PUT', query: { id: rowId(1) }, headers: { authorization: 'Bearer token-123' },
+      body: { id: rowId(1), title: 'Humming', code: '', createdAt: 1, updatedAt: 2,
+        messages: [{ id: 'user-1', role: 'user', content: '', timestamp: 1, humming }],
+      },
+    } as never, res as never);
+    expect(res.statusCode).toBe(unsafe ? 400 : 200);
+    if (unsafe) expect(upsert).not.toHaveBeenCalled();
+    else expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+      messages: [expect.objectContaining({ humming })],
+    }), { onConflict: 'id' });
   });
 
   it('deletes sessions by UUID id and authenticated user id', async () => {

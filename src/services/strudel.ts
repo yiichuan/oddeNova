@@ -3,10 +3,11 @@ import { analyticsContext, analyticsError, analyticsId } from '../lib/analytics-
 import { emitTelemetry, markTelemetryError } from '../lib/telemetry';
 import { renderOfflineAudio } from '../lib/offline-render';
 import { isAbortError, getErrorMessage, waitForRetryDelay } from '../lib/errors';
+import { encodeWav16 } from '../lib/wav';
 import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
-import { loadSampleIndex } from '../lib/sample-index-hosts';
+import { FEATURED_SAMPLE_INDEX, loadSampleIndex } from '../lib/sample-index-hosts';
 import {
   buildPreviewEvent,
   describeRegisteredSound,
@@ -511,6 +512,7 @@ export class StrudelService {
           loadModules,
           registerSynthSounds(),
           loadSampleIndex(samples, '/sample-index/dirt-samples.json'),
+          samples(FEATURED_SAMPLE_INDEX),
           loadSampleIndex(samples, '/sample-index/tidal-drum-machines.json'),
           loadSampleIndex(samples, '/sample-index/piano.json'),
           loadSampleIndex(samples, '/sample-index/vcsl.json'),
@@ -1230,7 +1232,12 @@ export class StrudelService {
     this.notify({ isPlaying: playing, isPaused: playing ? false : this._state.isPaused });
   }
 
-  play = async (source: PlaybackSource = 'manual', context = analyticsContext(undefined, undefined, this.code)): Promise<void> => {
+  play = async (
+    source: PlaybackSource = 'manual',
+    context = analyticsContext(undefined, undefined, this.code),
+    signal?: AbortSignal,
+  ): Promise<boolean> => {
+    if (signal?.aborted) return false;
     const playback = this.playbackTelemetry.request(source, context);
     if (!this.editorInstance) {
       this.playbackTelemetry.finish('startup_failed', playback, undefined, 'engine_unavailable');
@@ -1253,31 +1260,42 @@ export class StrudelService {
     // piece that changed since the last play() may no longer set.
     this.panelAccent?.reset();
     this.notify({ error: null });
+    const isCurrent = () => token === this.playToken && !signal?.aborted;
+    const abort = () => {
+      if (token === this.playToken) this.stop();
+    };
+    signal?.addEventListener('abort', abort, { once: true });
     try {
       await this.ensurePlayableAudioGraph();
       await this.loadOpening(token);
       // Stopped, or pressed again, while the opening loaded.
-      if (token !== this.playToken || !this.editorInstance) return;
+      if (!isCurrent() || !this.editorInstance) return false;
       await this.editorInstance.evaluate();
+      if (!isCurrent()) return false;
       this.applyPendingSeek();
       this.syncTransportState();
       if (this._state.isPlaying) this.playbackTelemetry.start(playback);
       else this.playbackTelemetry.finish('startup_failed', playback);
       this.pageAudioRecovery?.clearResumeIntent();
       void this.setupMasterChain();
+      return this._state.isPlaying;
     } catch (error) {
+      if (!isCurrent()) return false;
       if (this.isLikelyAudioGraphError(error)) {
         try {
           await this.resetLiveAudioGraph();
+          if (!isCurrent()) return false;
           await this.editorInstance.evaluate();
+          if (!isCurrent()) return false;
           this.applyPendingSeek();
           this.syncTransportState();
           if (this._state.isPlaying) this.playbackTelemetry.start(playback);
           else this.playbackTelemetry.finish('startup_failed', playback);
           this.pageAudioRecovery?.clearResumeIntent();
           void this.setupMasterChain();
-          return;
+          return this._state.isPlaying;
         } catch (retryError) {
+          if (!isCurrent()) return false;
           const message = getErrorMessage(retryError);
           this.notify({ error: message });
           this.playbackTelemetry.finish('startup_failed', playback, retryError);
@@ -1288,6 +1306,8 @@ export class StrudelService {
       this.notify({ error: message });
       this.playbackTelemetry.finish('startup_failed', playback, error);
       throw error;
+    } finally {
+      signal?.removeEventListener('abort', abort);
     }
   };
 
@@ -1936,57 +1956,6 @@ export class StrudelService {
 
 export const strudelService = StrudelService.instance();
 
-
-// --- WAV encoder (16-bit PCM, interleaved stereo / mono) ---
-// Inlined here because @strudel/webaudio doesn't export its internal helper.
-function encodeWav16(channels: Float32Array[], sampleRate: number): ArrayBuffer {
-  const numChannels = channels.length;
-  const bitDepth = 16;
-  const bytesPerSample = bitDepth / 8;
-  const blockAlign = numChannels * bytesPerSample;
-
-  let samples: Float32Array;
-  if (numChannels === 2) {
-    const l = channels[0];
-    const r = channels[1];
-    samples = new Float32Array(l.length * 2);
-    for (let i = 0; i < l.length; i++) {
-      samples[i * 2] = l[i];
-      samples[i * 2 + 1] = r[i];
-    }
-  } else {
-    samples = channels[0];
-  }
-
-  const dataLength = samples.length * bytesPerSample;
-  const ab = new ArrayBuffer(44 + dataLength);
-  const view = new DataView(ab);
-
-  const writeString = (offset: number, s: string): void => {
-    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
-  };
-
-  writeString(0, 'RIFF');
-  view.setUint32(4, 36 + dataLength, true);
-  writeString(8, 'WAVE');
-  writeString(12, 'fmt ');
-  view.setUint32(16, 16, true);             // fmt chunk size
-  view.setUint16(20, 1, true);              // PCM format
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * blockAlign, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, bitDepth, true);
-  writeString(36, 'data');
-  view.setUint32(40, dataLength, true);
-
-  let offset = 44;
-  for (let i = 0; i < samples.length; i++, offset += 2) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return ab;
-}
 
 function audioBufferToWav16(buffer: AudioBuffer): ArrayBuffer {
   const channels: Float32Array[] = [];

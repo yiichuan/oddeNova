@@ -43,7 +43,10 @@ export function useStrudel() {
   }, []);
 
   // play(code?) — if code provided, set it first then evaluate
-  const play = useCallback(async (code?: string, source: PlaybackSource = 'manual', context?: AnalyticsContext) => {
+  const play = useCallback(async (
+    code?: string, source: PlaybackSource = 'manual', context?: AnalyticsContext, signal?: AbortSignal,
+  ) => {
+    if (signal?.aborted) return false;
     if (!strudelService.isReady) {
       const attempt = unavailablePlayback.request(source, context);
       unavailablePlayback.finish('startup_failed', attempt, undefined, 'engine_unavailable');
@@ -63,8 +66,8 @@ export function useStrudel() {
         if (historyRef.current.length > MAX_HISTORY) historyRef.current.shift();
         setHistoryLen(historyRef.current.length);
       }
-      await strudelService.play(source, context);
-      return true;
+      const playing = await strudelService.play(source, context, signal);
+      return signal ? playing : true;
     } catch {
       return false;
     }

@@ -32,6 +32,79 @@ stack(
   note("c2 e2")
 )`;
 
+describe('searchSamples', () => {
+  const search = getHandler('searchSamples');
+
+  it('passes every role to one batch retriever and preserves partial failures', async () => {
+    const sampleSearch = vi.fn().mockResolvedValue([
+      { id: 'keys', ok: true, candidates: [{ name: 'piano' }] },
+      { id: 'drums', ok: false, error: 'Missing query result; retry this id.' },
+      { id: 'bass', ok: true, candidates: [] },
+    ]);
+    const result = await search({ queries: [
+      { id: 'keys', query: 'soft piano', features: { brightness: 'dark' } },
+      { id: 'drums', query: 'dry drums', limit: 2 },
+      { id: 'bass', query: 'bass' },
+    ] }, { ...makeCtx(''), sampleSearch });
+    expect(sampleSearch).toHaveBeenCalledTimes(1);
+    expect(sampleSearch).toHaveBeenCalledWith({ queries: [
+      expect.objectContaining({ id: 'keys', limit: 3, features: { brightness: 'dark' } }),
+      expect.objectContaining({ id: 'drums', limit: 2 }),
+      expect.objectContaining({ id: 'bass', limit: 3 }),
+    ] });
+    expect(result).toMatchObject({ ok: true, data: { results: [
+      { id: 'keys', ok: true, candidates: [{ name: 'piano' }] },
+      { id: 'drums', ok: false },
+      { id: 'bass', ok: true, candidates: [], notice: expect.stringContaining('没有匹配') },
+    ] } });
+  });
+
+  it('rejects invalid batches before invoking the retriever', async () => {
+    const sampleSearch = vi.fn();
+    expect((await search({ queries: [{ id: 'x', query: 'piano' }, { id: 'x', query: 'drums' }] },
+      { ...makeCtx(''), sampleSearch })).ok).toBe(false);
+    expect(sampleSearch).not.toHaveBeenCalled();
+  });
+
+  it('returns a tool failure when the entire model request fails', async () => {
+    const result = await search({ queries: [{ id: 'x', query: 'piano' }] }, {
+      ...makeCtx(''), sampleSearch: vi.fn().mockRejectedValue(Error('network')),
+    });
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('检索暂不可用') });
+  });
+
+  it('returns an unavailable error without loading the catalog when there is no retriever', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch');
+    try {
+      const result = await search({ queries: [{ id: 'keys', query: 'piano' }] }, makeCtx(''));
+      expect(result).toEqual({ ok: false, error: '当前会话未启用音色检索。' });
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it('retains the result shape of historical single-query calls', async () => {
+    const result = await search({ query: 'piano' }, { ...makeCtx(''), sampleSearch: vi.fn().mockResolvedValue([
+      { id: 'query', ok: true, candidates: [{ name: 'piano' }] },
+    ]) });
+    expect(result).toEqual({ ok: true, data: { candidates: [{ name: 'piano' }], notice: undefined } });
+  });
+
+  it('exposes required batch inputs and localized nested descriptions in both languages', () => {
+    for (const isZh of [true, false]) {
+      const schema = getOpenAIToolSchemas(isZh).find(t => t.function.name === 'searchSamples')!.function.parameters;
+      expect(schema.required).toEqual(['queries']);
+      const properties = schema.properties as { queries: { items: { required: string[]; properties: { id: { description: string }; limit: Record<string, unknown> } } } };
+      expect(properties.queries).not.toHaveProperty('maxItems');
+      expect(properties.queries.items.properties).toHaveProperty('limit');
+      expect(properties.queries.items.properties.limit).not.toHaveProperty('maximum');
+      expect(properties.queries.items.required).toEqual(['id', 'query']);
+      expect(properties.queries.items.properties.id.description).toContain(isZh ? '唯一' : 'Unique');
+    }
+  });
+});
+
 describe('validate', () => {
   const validate = getHandler('validate');
 
@@ -140,7 +213,26 @@ stack(
   });
 });
 
+describe('reportArrangement', () => {
+  it('returns the plan and the musical decisions as separate internal events', async () => {
+    const reportSession = vi.fn();
+    const ctx = { ...makeCtx(''), reportSession };
+    expect(await getHandler('reportArrangement')({ plan: 'Check the motif', strategy: 'Keep the melody on piano' }, ctx)).toEqual({ ok: true });
+    expect(reportSession.mock.calls).toEqual([
+      [{ kind: 'plan', facts: { nextStep: 'Check the motif' } }],
+      [{ kind: 'strategy', facts: { musicalDecisions: 'Keep the melody on piano' } }],
+    ]);
+  });
+});
+
 describe('setCode', () => {
+  it('reports an out-of-scope candidate and keeps the previous tool state', async () => {
+    const ctx = { ...makeCtx('s("bd")'), validateScope: () => false };
+    const result = await getHandler('setCode')({ code: 's("hh")' }, ctx);
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('authorized edit scope') });
+    expect(ctx.state.code).toBe('s("bd")');
+  });
+
   const setCode = getHandler('setCode');
 
   const FULL_CODE = `setcps(0.5)
@@ -216,6 +308,13 @@ stack(
 });
 
 describe('commit', () => {
+  it('does not commit a normalized candidate rejected by the scope validator', async () => {
+    const ctx = { ...makeCtx('s("bd")'), validateScope: () => false };
+    await expect(getHandler('commit')({}, ctx)).resolves.toMatchObject({
+      ok: false, error: expect.stringContaining('authorized edit scope'),
+    });
+  });
+
   const commit = getHandler('commit');
 
   it('当前状态代码语法错误时返回失败，不提交', async () => {

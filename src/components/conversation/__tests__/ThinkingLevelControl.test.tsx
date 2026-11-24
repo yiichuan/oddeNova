@@ -126,6 +126,25 @@ describe('ThinkingLevelControl', () => {
     expect(slider.value).toBe('1');
   });
 
+  it('shifts the popover inside the composer when the trigger is near the left edge', () => {
+    const { container, root } = renderControl();
+    roots.push(root);
+    const trigger = getTrigger(container);
+    container.classList.add('chat-input-surface');
+    container.getBoundingClientRect = () => ({ ...RECT, width: 260, right: 360 }) as DOMRect;
+    trigger.parentElement!.getBoundingClientRect = () => ({ ...RECT, left: 115, width: 35, right: 150 }) as DOMRect;
+    const popoverWidth = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(208);
+
+    try {
+      act(() => trigger.click());
+      const popover = getPopover(container)!;
+      expect(popover.style.maxWidth).toBe('244px');
+      expect(popover.style.right).toBe('-166px');
+    } finally {
+      popoverWidth.mockRestore();
+    }
+  });
+
   it('bookends the dot row with a capsule, one more capsule than there are stops', () => {
     const { container, root } = renderControl();
     roots.push(root);

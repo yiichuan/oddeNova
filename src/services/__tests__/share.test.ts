@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { hummingAttachment } from '../../lib/__tests__/fixtures/humming';
 import { uploadShare, fetchShare } from '../share';
 
 describe('uploadShare', () => {
@@ -47,6 +48,16 @@ describe('uploadShare', () => {
     expect(body.locale).toBe('zh-CN');
     expect(typeof body.sharedAt).toBe('number');
     expect(shareId).toBe(mockShareId);
+  });
+
+  it('includes validated melody metadata in a share', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ shareId: 'humming' }) });
+    const humming = hummingAttachment();
+    await uploadShare({ title: 'Humming', code: '', locale: 'en', messages: [
+      { id: 'user-1', role: 'user', content: '', timestamp: 1, humming },
+    ] });
+    const request = vi.mocked(fetch).mock.calls[0][1]!;
+    expect(JSON.parse(request.body as string).messages[0].humming).toEqual(humming);
   });
 
   it('throws when response is not ok', async () => {

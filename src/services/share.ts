@@ -2,6 +2,7 @@ import { ownImage } from '../lib/image-attachments';
 import { authHeaders } from './cloud-session-repository';
 import type { ChatMessage } from '../hooks/useChat';
 import type { CodeRevision } from '../hooks/useSessions';
+import { projectChatMessageForTransfer } from '../lib/humming-transfer';
 
 export type ShareLocale = 'zh-CN' | 'en';
 
@@ -30,7 +31,7 @@ export async function uploadShare(input: UploadShareInput): Promise<string> {
     version: 1,
     title: input.title,
     code: input.code,
-    messages: await Promise.all(input.messages.map(async message => ({ ...message, ...(message.images?.length ? { images: await Promise.all(message.images.map(ownImage)) } : {}) }))),
+    messages: await Promise.all(input.messages.map(async message => ({ ...projectChatMessageForTransfer(message), ...(message.images?.length ? { images: await Promise.all(message.images.map(ownImage)) } : {}) }))),
     revisions: input.revisions,
     sharedAt: Date.now(),
     locale: input.locale,

@@ -10,10 +10,15 @@ import ChatInput, { type PresetLock } from './ChatInput';
 import { isDemoMode, isPresentationMode } from '../../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
+import type { HummingInputController } from '../../hooks/useHummingInput';
+import type { HummingAttachment } from '../../types/humming';
+import type { LiveRouterProgress } from '../../agent/progress';
 
 interface SidebarProps {
+  ownerKey?: string;
   title: string;
   messages: ChatMessage[];
+  liveRouterProgress?: LiveRouterProgress;
   revisions?: CodeRevision[];
   isLoading: boolean;
   engineReady: boolean;
@@ -27,7 +32,9 @@ interface SidebarProps {
     text: string,
     entryPoint: ChatEntryPoint,
     images?: ImageAttachment[],
-  ) => void | Promise<void>;
+    humming?: HummingAttachment,
+  ) => boolean | void | Promise<boolean | void>;
+  humming?: HummingInputController;
   onStop?: () => void;
   onNewSession: () => void;
   onMoodGenerate?: () => Promise<void> | void;
@@ -80,8 +87,10 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
+  ownerKey,
   title,
   messages,
+  liveRouterProgress,
   revisions,
   isLoading,
   engineReady,
@@ -92,6 +101,7 @@ export default function Sidebar({
   choiceOptions,
   suggestions,
   onSendText,
+  humming,
   onStop,
   onNewSession,
   onMoodGenerate,
@@ -256,7 +266,12 @@ export default function Sidebar({
           )}
           <ConversationView
             key={currentId ?? 'default'}
+            ownerKey={ownerKey}
             messages={messages}
+            liveRouterProgress={liveRouterProgress}
+            pendingHumming={humming?.pendingSubmission}
+            hummingWaveformToolCalled={humming?.waveformToolCalled}
+            onCancelHumming={humming?.cancelTranscription}
             revisions={revisions}
             isLoading={isLoading && !isReplaying}
             isVideoMode={isVideoMode}
@@ -280,7 +295,7 @@ export default function Sidebar({
       </div>
 
       <div data-sidebar-composer className="-mt-px w-full shrink-0">
-        <ChatInput key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} choiceOptions={choiceOptions} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} guided={guided} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
+        <ChatInput recordingScope={`${ownerKey ?? ""}:${currentId ?? ""}`} key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} humming={humming} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} choiceOptions={choiceOptions} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} guided={guided} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
       </div>
     </aside>
   );

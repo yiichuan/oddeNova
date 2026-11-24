@@ -5,6 +5,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatInput from '../ChatInput';
 
+import type { HummingInputController } from '../../../hooks/useHummingInput';
+import { hummingDraft } from '../../../lib/__tests__/fixtures/humming';
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 // Provide localStorage mock for happy-dom (ThinkingLevelControl reads it on mount)
@@ -183,6 +186,52 @@ describe('ChatInput engine initialization status', () => {
     expect(textarea.value).toBe('来一段 house');
   });
 
+  it('reveals the Tab key only after each desktop suggestion finishes typing', () => {
+    vi.useFakeTimers();
+    try {
+      const { container, root } = renderChatInput({ suggestions: ['First idea', 'Second idea'] });
+      roots.push(root);
+      const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms); });
+      const tabKey = () => container.querySelector('kbd');
+
+      advance(400);
+      expect(container.textContent).toContain('First');
+      expect(tabKey()).toBeNull();
+
+      advance(80);
+      expect(container.textContent).toContain('First idea');
+      expect(tabKey()).toBeNull();
+      advance(349);
+      expect(tabKey()).toBeNull();
+      advance(1);
+      expect(tabKey()?.textContent).toBe('Tab');
+      expect(container.querySelector('textarea')?.getAttribute('aria-keyshortcuts')).toBe('Tab');
+
+      const key = tabKey()!;
+      act(() => key.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+      expect(container.textContent).toContain('Press Tab to fill');
+      advance(10_000);
+      expect(container.textContent).toContain('First idea');
+      expect(tabKey()).toBe(key);
+
+      act(() => key.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
+      expect(container.textContent).not.toContain('Press Tab to fill');
+      expect(key.parentElement?.dataset.motion).toBe('rest');
+      advance(5500);
+      advance(350);
+      advance(400);
+      expect(container.textContent).toContain('Second');
+      expect(tabKey()).toBeNull();
+
+      advance(80);
+      advance(350);
+      expect(tabKey()?.textContent).toBe('Tab');
+      expect(tabKey()?.parentElement?.dataset.motion).toBe('intro');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reports a Tab-adopted suggestion as the suggestion entry point', () => {
     const onSendText = vi.fn();
     const { container, root } = renderChatInput({
@@ -244,21 +293,34 @@ describe('ChatInput engine initialization status', () => {
     expect(onSendText).toHaveBeenCalledWith('Try a sparse jazz groove with brushes', 'text');
   });
 
-  it('focuses without adopting the suggestion when the input card is tapped on mobile', () => {
+  it('shows a delayed Return keycap only while the mobile input is focused', () => {
     mobileState.value = true;
-    const { container, root } = renderChatInput({
-      suggestions: ['Try a sparse jazz groove'],
-    });
-    roots.push(root);
-    const form = container.querySelector<HTMLFormElement>('form');
-    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
-    if (!form || !textarea) throw new Error('chat input not found');
+    vi.useFakeTimers();
+    try {
+      const { container, root } = renderChatInput({ suggestions: ['Jazz'] });
+      roots.push(root);
+      const form = container.querySelector('form')!;
+      const textarea = container.querySelector('textarea')!;
 
-    act(() => form.click());
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(container.textContent).toContain('Jazz');
+      expect(container.querySelector('kbd')).toBeNull();
 
-    expect(document.activeElement).toBe(textarea);
-    expect(textarea.value).toBe('');
-    expect(container.textContent).toContain('⏎ to use');
+      act(() => form.click());
+      expect(document.activeElement).toBe(textarea);
+      expect(textarea.value).toBe('');
+      expect(container.querySelector('kbd')).toBeNull();
+      expect(container.textContent).not.toContain('⏎ to use');
+
+      act(() => { vi.advanceTimersByTime(350); });
+      expect(container.querySelector('kbd')?.textContent).toBe('⏎');
+      expect(textarea.getAttribute('aria-keyshortcuts')).toBe('Enter');
+
+      act(() => textarea.blur());
+      expect(container.querySelector('kbd')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('adopts instead of sending the suggestion when Enter is pressed on an empty mobile input', () => {
@@ -323,7 +385,7 @@ describe('ChatInput engine initialization status', () => {
     if (!textarea) throw new Error('textarea not found');
 
     expect(textarea.placeholder).toBe('Or write your own idea…');
-    expect(container.textContent).not.toContain('Tab to use');
+    expect(container.querySelector('kbd')).toBeNull();
 
     act(() => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', {
@@ -721,5 +783,246 @@ describe('rollback image draft', () => {
     act(() => remove.click());
     expect(getSubmitButton(container).disabled).toBe(true);
     act(() => root.unmount()); container.remove();
+  });
+});
+
+describe('ChatInput humming recording controls', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) act(() => root.unmount());
+    document.body.innerHTML = '';
+    mobileState.value = false;
+  });
+
+  function controller(patch: Partial<HummingInputController> = {}): HummingInputController {
+    return {
+      draft: null,
+      earlierTakes: [],
+      audioUrl: null,
+      isPersistent: true,
+      isStarting: false,
+      isRecording: false,
+      recordingStream: null,
+      recordingElapsedSeconds: 0,
+      isFinalizingRecording: false,
+      isRerecording: false,
+      isTranscribing: false,
+      waveformToolCalled: false,
+      isSavingDraft: false,
+      isSavingReplacement: false,
+      error: null,
+      replacementCandidate: null,
+      replacementAudioUrl: null,
+      canRecord: true,
+      analysis: null,
+      understanding: { analyze: vi.fn(async () => null), cancel: vi.fn(), pending: false, result: null, error: null },
+      analyze: vi.fn(async () => false),
+      startRecording: vi.fn(),
+      cancelRecording: vi.fn(),
+      stopRecording: vi.fn(),
+      reRecord: vi.fn(),
+      cancelRerecord: vi.fn(),
+      retrySaveReplacement: vi.fn(async () => false),
+      useOriginalRecording: vi.fn(),
+      retrySave: vi.fn(async () => false),
+      discard: vi.fn(),
+      cancelTranscription: vi.fn(),
+      restoreAttachment: vi.fn(async () => false),
+      submit: vi.fn(async () => false),
+      ...patch,
+    };
+  }
+
+  it('opens the recording menu and starts humming only after selection', () => {
+    const humming = controller();
+    const { container, root } = renderChatInput({ humming });
+    roots.push(root);
+    const button = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
+    expect(button).not.toBeNull();
+    act(() => button!.click());
+    const items = container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+    expect(items).toHaveLength(2);
+    expect(humming.startRecording).not.toHaveBeenCalled();
+    act(() => items[1].click());
+    expect(humming.startRecording).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('puts cancel, level dots, and stop next to the disabled send button', () => {
+    const humming = controller({ isRecording: true, recordingElapsedSeconds: 8, canRecord: false });
+    const { container, root } = renderChatInput({ humming, prefill: '写入这段旋律' });
+    roots.push(root);
+
+    expect(container.textContent).toContain('Recording');
+    const stop = container.querySelector<HTMLButtonElement>('button[aria-label="Stop recording"]');
+    const cancel = container.querySelector<HTMLButtonElement>('button[aria-label="Discard recording"]');
+    const send = getSubmitButton(container);
+    const pill = stop?.closest('[data-expanded="true"]');
+    expect(pill?.querySelector('[role="timer"]')?.textContent).toBe('0:08');
+    expect(pill?.contains(cancel)).toBe(true);
+    expect(pill?.querySelector('svg path[stroke-linecap="round"]')).not.toBeNull();
+    expect(pill?.parentElement?.nextElementSibling).toBe(send);
+    expect(send.querySelector('.lucide-mic-vocal')).not.toBeNull();
+    expect(send.disabled).toBe(true);
+    expect(container.querySelector('button[aria-haspopup="menu"]')).toBeNull();
+    act(() => cancel?.click());
+    expect(humming.cancelRecording).toHaveBeenCalledOnce();
+    act(() => stop?.click());
+    expect(humming.stopRecording).toHaveBeenCalledOnce();
+  });
+
+  it('replaces the humming waveform with a receiving status while the take is saved', () => {
+    const { container, root } = renderChatInput({ humming: controller({ isFinalizingRecording: true }) });
+    roots.push(root);
+
+    const pill = container.querySelector('[data-capture-phase="receiving"]');
+    expect(pill?.querySelector('[role="status"]')?.textContent).toBe('Receiving');
+    expect(pill?.querySelector('.chat-recording-waveform')).toBeNull();
+    expect(pill?.querySelector('.lucide-loader-circle')?.classList.contains('animate-spin')).toBe(true);
+    expect(pill?.querySelector<HTMLButtonElement>('.chat-recording-pill-action')?.disabled).toBe(true);
+    expect(getSubmitButton(container).disabled).toBe(true);
+  });
+
+  it('keeps voice input available in choice mode and transcribes with the saved DeepSeek key', async () => {
+    const stopTrack = vi.fn();
+    const getUserMedia = vi.fn(async () => ({ getTracks: () => [{ stop: stopTrack }] }));
+    let finishRecording = () => {};
+    class TestMediaRecorder {
+      static isTypeSupported() { return false; }
+      state = 'inactive';
+      mimeType = 'audio/ogg';
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      start() { this.state = 'recording'; }
+      stop() {
+        this.state = 'inactive';
+        finishRecording = () => {
+          this.ondataavailable?.({ data: new Blob(['voice']) });
+          this.onstop?.();
+        };
+      }
+    }
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
+    vi.stubGlobal('MediaRecorder', TestMediaRecorder);
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ text: 'add drums' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const previousProvider = localStorage.getItem('vibe_provider');
+    const previousKey = localStorage.getItem('vibe_api_key_deepseek');
+    localStorage.setItem('vibe_provider', 'openai');
+    localStorage.setItem('vibe_api_key_deepseek', 'saved-deepseek-key');
+    try {
+      const { container, root } = renderChatInput({ humming: controller(), inputMode: 'choice', prefill: 'Voice prompt' });
+      roots.push(root);
+      const field = container.querySelector('textarea')!;
+      const recordButton = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
+      act(() => recordButton.click());
+      await act(async () => container.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click());
+
+      expect(getUserMedia).toHaveBeenCalledOnce();
+      expect(document.activeElement).toBe(recordButton);
+      expect(field.readOnly).toBe(true);
+      expect(container.textContent).toContain('Recording voice');
+      expect(container.querySelector('button[aria-label="Stop recording"]')).toBe(recordButton);
+      expect(recordButton.parentElement?.getAttribute('data-expanded')).toBe('true');
+      expect(recordButton.parentElement?.querySelector('[role="timer"]')?.textContent).toBe('0:00');
+      expect(getSubmitButton(container).disabled).toBe(true);
+      expect(getSubmitButton(container).querySelector('.lucide-message-circle-more')).not.toBeNull();
+      act(() => recordButton.click());
+      expect(recordButton.parentElement?.getAttribute('data-capture-phase')).toBe('receiving');
+      expect(recordButton.getAttribute('aria-label')).toBe('Receiving');
+      expect(document.activeElement).toBe(container.querySelector('button[aria-label="Cancel recognition"]'));
+      expect(field.readOnly).toBe(true);
+      expect(container.querySelector('.chat-recording-waveform')).toBeNull();
+      expect(container.querySelector('.chat-recording-pill-progress .animate-spin')).not.toBeNull();
+      expect(getSubmitButton(container).disabled).toBe(true);
+
+      await act(async () => finishRecording());
+      expect(stopTrack).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledWith('https://api.deepseek.com/v1/tools/asr', expect.objectContaining({
+        headers: { Authorization: 'Bearer saved-deepseek-key' },
+      }));
+      expect(field.value).toBe('Voice prompt add drums');
+      expect(field.readOnly).toBe(false);
+      expect(document.activeElement).toBe(field);
+      expect(container.querySelector('button[aria-haspopup="menu"]')).toBe(recordButton);
+      expect(recordButton.parentElement?.getAttribute('data-expanded')).toBe('false');
+      expect(getSubmitButton(container).disabled).toBe(false);
+      expect(getSubmitButton(container).querySelector('.lucide-message-circle-more')).toBeNull();
+    } finally {
+      if (previousProvider === null) localStorage.removeItem('vibe_provider');
+      else localStorage.setItem('vibe_provider', previousProvider);
+      if (previousKey === null) localStorage.removeItem('vibe_api_key_deepseek');
+      else localStorage.setItem('vibe_api_key_deepseek', previousKey);
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('shows a compact recording above the text field and sends it through the existing attachment path', () => {
+    const humming = controller({ draft: hummingDraft(), audioUrl: 'blob:draft', canRecord: false });
+    const { container, root } = renderChatInput({ humming });
+    roots.push(root);
+
+    const card = container.querySelector('[data-humming-audio-player]')!;
+    const field = container.querySelector('textarea')!;
+    expect(card.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.querySelector('[aria-label="Play Humming 01"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Analysis result"]')).toBeNull();
+    expect([...container.querySelectorAll('button')].map(button => button.textContent?.trim()))
+      .not.toContain('Analyze');
+    act(() => getSubmitButton(container).click());
+    expect(humming.submit).toHaveBeenCalledWith('Write out this melody', 'text');
+  });
+
+  it('keeps recognition progress and cancellation on the recording card', () => {
+    const humming = controller({
+      draft: hummingDraft(), audioUrl: 'blob:draft', isTranscribing: true, canRecord: false,
+    });
+    const { container, root } = renderChatInput({ humming });
+    roots.push(root);
+
+    const card = container.querySelector('[data-humming-audio-player]')!;
+    expect(card.querySelector('.lucide-loader-circle')).not.toBeNull();
+    expect(container.textContent).not.toContain('Requesting analysis from the agent');
+    act(() => card.querySelector<HTMLButtonElement>('[aria-label="Cancel recognition"]')!.click());
+    expect(humming.cancelTranscription).toHaveBeenCalledOnce();
+    expect(getSubmitButton(container).disabled).toBe(true);
+  });
+
+  it('appends a second card in the same row and removes each take by ID', () => {
+    const first = hummingDraft();
+    const second = { ...hummingDraft(), id: '22222222-2222-4222-8222-222222222222' };
+    const humming = controller({
+      draft: second, audioUrl: 'blob:second',
+      earlierTakes: [{ draft: first, audioUrl: 'blob:first', isPersistent: true }],
+    });
+    const { container, root } = renderChatInput({ humming });
+    roots.push(root);
+
+    const [firstCard, secondCard] = container.querySelectorAll('[data-humming-audio-player]');
+    expect(firstCard.parentElement).toBe(secondCard.parentElement);
+    expect(firstCard.querySelector('[aria-label="Play Humming 01"]')).not.toBeNull();
+    expect(secondCard.querySelector('[aria-label="Play Humming 02"]')).not.toBeNull();
+    act(() => firstCard.querySelector<HTMLButtonElement>('[aria-label="Delete recording"]')!.click());
+    expect(humming.discard).toHaveBeenCalledWith(first.id);
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click());
+    act(() => container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[1].click());
+    expect(humming.startRecording).toHaveBeenCalledOnce();
+  });
+
+  it('can dismiss an unsaved replacement from its own card', () => {
+    const humming = controller({
+      draft: hummingDraft(), audioUrl: 'blob:original', canRecord: false,
+      replacementCandidate: { ...hummingDraft(), id: '22222222-2222-4222-8222-222222222222' },
+      replacementAudioUrl: 'blob:candidate', error: 'replacement_storage_unavailable',
+    });
+    const { container, root } = renderChatInput({ humming });
+    roots.push(root);
+
+    const [, candidate] = container.querySelectorAll('[data-humming-audio-player]');
+    expect(candidate.querySelector('[aria-label="Play Humming 02"]')).not.toBeNull();
+    act(() => candidate.querySelector<HTMLButtonElement>('[aria-label="Delete recording"]')!.click());
+    expect(humming.useOriginalRecording).toHaveBeenCalledOnce();
+    expect(humming.discard).not.toHaveBeenCalled();
   });
 });

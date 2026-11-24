@@ -95,7 +95,7 @@ it('reuses the uploaded thumbnail after the composer unmounts, without loading o
   const close = vi.fn();
   vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 128, height: 256, close }));
   const drawImage = vi.fn();
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ fillRect: vi.fn(), drawImage } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ fillRect: vi.fn(), drawImage } as unknown as ReturnType<HTMLCanvasElement['getContext']>);
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL')
     .mockReturnValueOnce('data:image/jpeg;base64,full-image')
     .mockReturnValueOnce('data:image/jpeg;base64,thumbnail');

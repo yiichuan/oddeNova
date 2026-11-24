@@ -1,0 +1,134 @@
+.agent-workflow {
+  --workflow-line: var(--color-border, #323a34);
+  --workflow-muted: var(--color-text-secondary, #a6afa8);
+  --workflow-panel: var(--color-conversation-surface, #18221e);
+  --workflow-ground: var(--color-bg-primary, #101914);
+  --workflow-router: light-dark(#2156a3, #9ebffb);
+  --workflow-session: light-dark(#17624c, #8fd2b6);
+  --workflow-client: light-dark(#5a4985, #ccb9ef);
+  --workflow-tool: light-dark(#8c5418, #e7b981);
+  background: var(--workflow-ground);
+  color: var(--color-text-primary, #e7eee4);
+  font-family: "DM Sans", "PingFang SC", system-ui, sans-serif;
+  min-height: 100dvh;
+  color-scheme: dark;
+}
+html[data-theme="light"] .agent-workflow { color-scheme: light; }
+.agent-workflow__masthead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px clamp(16px, 3vw, 44px);
+  border-bottom: 1px solid var(--workflow-line);
+}
+.agent-workflow__masthead a { color: var(--workflow-muted); font-size: 12px; text-decoration: none; }
+.agent-workflow__masthead h1 { margin: 5px 0 0; font-size: clamp(20px, 2.4vw, 30px); font-weight: 650; }
+.agent-workflow__actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.agent-workflow__model { color: var(--workflow-muted); font-size: 12px; overflow-wrap: anywhere; }
+.agent-workflow__actions button,
+.agent-trace__event button,
+.agent-workflow__trace select {
+  padding: 6px 10px;
+  border: 1px solid var(--workflow-line);
+  background: var(--workflow-panel);
+  color: inherit;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.agent-workflow__actions button:disabled { opacity: .5; }
+.agent-workflow__actions button:not(:disabled),
+.agent-trace__event button,
+.agent-workflow__trace select { cursor: pointer; }
+.agent-workflow__layout {
+  display: grid;
+  grid-template-columns: minmax(340px, 5fr) minmax(0, 7fr);
+  height: calc(100dvh - 88px);
+  min-height: 480px;
+}
+.agent-workflow__conversation, .agent-workflow__trace {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.agent-workflow__conversation { background: var(--workflow-panel); border-right: 1px solid var(--workflow-line); }
+.agent-workflow__panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 15px clamp(12px, 2vw, 28px);
+  border-bottom: 1px solid var(--workflow-line);
+  min-height: 74px;
+}
+.agent-workflow__panel-header h2 { font-size: 15px; font-weight: 650; margin: 0 0 4px; }
+.agent-workflow__panel-header p { font-size: 12px; color: var(--workflow-muted); margin: 0; }
+.agent-workflow__trace select { max-width: clamp(120px, 19vw, 250px); }
+.agent-workflow__messages { flex: 1; min-height: 0; position: relative; }
+.agent-workflow__composer { padding: 10px clamp(10px, 1.8vw, 26px) 14px; }
+.agent-workflow__audio-engine { position: absolute; width: 1px; height: 1px; overflow: hidden; visibility: hidden; }
+.agent-workflow__error { color: light-dark(#992b31, #f6a3a9); margin: 4px 16px; font-size: 13px; overflow-wrap: anywhere; }
+.agent-trace__scroll { flex: 1; overflow: auto; padding: 16px clamp(12px, 2vw, 28px) 22px; }
+.agent-trace__empty { margin: 28px 0; color: var(--workflow-muted); font-size: 14px; }
+.agent-trace__turn {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.agent-trace__turn span:last-child { flex: 0 0 auto; color: var(--workflow-muted); font-size: 12px; font-weight: 400; }
+.agent-trace__timeline { padding: 0 0 0 16px; margin: 0 0 0 6px; border-left: 1px solid var(--workflow-line); list-style: none; }
+.agent-trace__event {
+  --actor: var(--workflow-muted);
+  position: relative;
+  margin-bottom: 9px;
+  padding: 9px 12px;
+  background: var(--workflow-panel);
+  border: 1px solid var(--workflow-line);
+  border-radius: 8px;
+}
+.agent-trace__event::before {
+  content: '';
+  position: absolute;
+  top: 17px;
+  left: -21px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--actor);
+}
+.agent-trace__event[data-failed] { border-color: light-dark(#c27b7d, #9a5559); }
+.agent-trace__meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; color: var(--workflow-muted); font-size: 11px; }
+.agent-trace__meta time { font-family: "IBM Plex Mono", ui-monospace, monospace; min-width: 7ch; }
+.agent-trace__duration { margin-left: auto; }
+.agent-trace__actor { --actor: var(--workflow-muted); padding: 1px 6px; border-radius: 4px; color: var(--actor); background: color-mix(in srgb, var(--actor) 11%, transparent); }
+.agent-trace__event[data-actor="router"], .agent-trace__actor[data-actor="router"] { --actor: var(--workflow-router); }
+.agent-trace__event[data-actor="session"], .agent-trace__actor[data-actor="session"] { --actor: var(--workflow-session); }
+.agent-trace__event[data-actor="client"], .agent-trace__actor[data-actor="client"] { --actor: var(--workflow-client); }
+.agent-trace__event[data-actor="tool"], .agent-trace__actor[data-actor="tool"] { --actor: var(--workflow-tool); }
+.agent-trace__event p, .agent-trace__event summary { margin: 6px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.agent-trace__event summary { cursor: pointer; }
+.agent-trace__event pre {
+  max-height: 38dvh;
+  overflow: auto;
+  padding: 10px;
+  margin: 8px 0 0;
+  border-radius: 5px;
+  background: var(--workflow-ground);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 11px/1.65 "IBM Plex Mono", ui-monospace, monospace;
+}
+.agent-trace__event button { margin-top: 7px; }
+@media (max-width: 760px) {
+  .agent-workflow__layout { display: flex; flex-direction: column; height: auto; }
+  .agent-workflow__conversation { height: 66dvh; min-height: 350px; border-right: none; border-bottom: 1px solid var(--workflow-line); }
+  .agent-workflow__trace { height: 62dvh; min-height: 350px; }
+  .agent-workflow__masthead { flex-wrap: wrap; }
+  .agent-workflow__actions { justify-content: flex-start; }
+}

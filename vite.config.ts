@@ -1,16 +1,21 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { copyFileSync, mkdirSync, readFileSync, readdirSync, existsSync } from 'fs'
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, existsSync, statSync } from 'fs'
 import { createHash } from 'node:crypto'
-import { resolve, join } from 'path'
+import { resolve, join, sep } from 'path'
 import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
 import officialChatHandler from './api/official/v1/chat/completions'
 import sessionsHandler from './api/sessions'
 import onboardingHandler from './api/onboarding'
+import asrHandler from './api/official/v1/tools/asr'
+import musicUnderstandingHandler from './api/official/v1/tools/music-understanding'
+import { MUSIC_UNDERSTANDING_PATH } from './shared/music-understanding'
 import { privacyRouteMiddleware } from './server/privacy-route'
+import { sampleAnnotationEditor } from './server/sample-annotation-editor'
+import { localDevTools } from './server/local-dev-tools'
 import { vcslProxyHandler } from './server/vcsl-proxy'
 import { EnvHttpProxyAgent, setGlobalDispatcher } from 'undici'
 
@@ -119,6 +124,12 @@ function officialApiDevMiddleware(): Plugin {
   return {
     name: 'official-api-dev-middleware',
     configureServer(server) {
+      server.middlewares.use(MUSIC_UNDERSTANDING_PATH, (req, res) => {
+        void musicUnderstandingHandler(req, res)
+      })
+      server.middlewares.use('/api/official/v1/tools/asr', (req, res) => {
+        void asrHandler(req, res)
+      })
       server.middlewares.use('/api/official/v1/chat/completions', async (req, res) => {
         try {
           const body = req.method === 'POST' ? await readJsonBody(req) : undefined
@@ -454,6 +465,64 @@ function syncAnimationHtml(): Plugin {
   }
 }
 
+// The model is fetched only by the transcription worker and is always served
+// from this application. Keep the package model as ordinary same-origin
+// assets so production never depends on a third-party model CDN.
+function basicPitchModelAssets(): Plugin {
+  const packageRoot = resolve(__dirname, 'node_modules/@spotify/basic-pitch')
+  const modelRoot = resolve(packageRoot, 'model')
+
+  const filesUnder = (directory: string): string[] =>
+    readdirSync(directory).flatMap((name) => {
+      const path = join(directory, name)
+      return statSync(path).isDirectory() ? filesUnder(path) : [path]
+    })
+
+  return {
+    name: 'basic-pitch-local-model-assets',
+    configureServer(server) {
+      server.middlewares.use('/models/basic-pitch', (req, res, next) => {
+        let requestedPath: string
+        try {
+          requestedPath = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname)
+        } catch {
+          next()
+          return
+        }
+        const path = resolve(modelRoot, requestedPath.replace(/^\/+/, ''))
+        if (path !== modelRoot && !path.startsWith(modelRoot + sep)) {
+          next()
+          return
+        }
+        if (!existsSync(path) || !statSync(path).isFile()) {
+          next()
+          return
+        }
+        res.setHeader(
+          'Content-Type',
+          path.endsWith('.json') ? 'application/json' : 'application/octet-stream',
+        )
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+        res.end(readFileSync(path))
+      })
+    },
+    generateBundle() {
+      for (const path of filesUnder(modelRoot)) {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'models/basic-pitch/' + path.slice(modelRoot.length + 1).split(sep).join('/'),
+          source: readFileSync(path),
+        })
+      }
+      this.emitFile({
+        type: 'asset',
+        fileName: 'models/basic-pitch/LICENSE',
+        source: readFileSync(resolve(packageRoot, 'LICENSE')),
+      })
+    },
+  }
+}
+
 // Exact /privacy paths only — the Vercel rewrite for the same paths is not
 // visible to Vite, so dev and preview servers get this small alias instead of
 // a copy of the routing table. The rewrite itself lives in
@@ -470,22 +539,22 @@ function privacyDevMiddleware(): Plugin {
   }
 }
 
-// Node's fetch ignores HTTPS_PROXY. On a machine that reaches the outside
-// only through one, every dev API middleware fetch (Supabase auth and session
-// sync, the VCSL passthrough, …) would fail with ECONNRESET while the browser,
-// which does use the proxy, signs in fine. So the dev server routes its own
-// fetches through the same proxy, keeping loopback (AirJelly) direct.
-function useEnvProxyForDevFetch() {
-  const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy
+function useEnvProxyForDevFetch(devProxy?: string) {
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy
     || process.env.HTTP_PROXY || process.env.http_proxy
-  if (!proxyUrl) return
-  const noProxy = [process.env.NO_PROXY || process.env.no_proxy, 'localhost,127.0.0.1,::1']
+  if (!devProxy && !proxy) return
+
+  // A local Vite override can point to the active proxy even when the shell
+  // still exports an old port. The override is server-side only.
+  const noProxy = [process.env.no_proxy || process.env.NO_PROXY, 'localhost,127.0.0.1,::1']
     .filter(Boolean).join(',')
-  setGlobalDispatcher(new EnvHttpProxyAgent({ noProxy }))
+  setGlobalDispatcher(new EnvHttpProxyAgent({
+    noProxy,
+    ...(devProxy ? { httpProxy: devProxy, httpsProxy: devProxy } : {}),
+  }))
 }
 
-export default defineConfig(({ command, mode }) => {
-  if (command === 'serve' && !process.env.VITEST) useEnvProxyForDevFetch()
+export default defineConfig(({ command, isPreview, mode }) => {
   // Vite hashes the patches directory mtime, not the contents of existing
   // patch files. Key the cache by their contents so patched package exports
   // cannot be served from an older prebundle. Keep build-mode caches separate.
@@ -499,7 +568,10 @@ export default defineConfig(({ command, mode }) => {
   // (officialApiDevMiddleware) read server-side keys from process.env, so
   // load the full .env here and merge any missing keys in (shell env wins).
   const env = loadEnv(mode, process.cwd(), '')
-  for (const key of ['OFFICIAL_API_KEY', 'OPENROUTER_API_KEY', 'OPENROUTER_VISION_MODEL', 'VITE_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
+  if (command === 'serve' && !isPreview && !process.env.VITEST) {
+    useEnvProxyForDevFetch(env.ODDENOVA_DEV_PROXY?.trim())
+  }
+  for (const key of ['OFFICIAL_API_KEY', 'QWEN_OMNI_API_KEY', 'QWEN_OMNI_BASE_URL', 'OPENROUTER_API_KEY', 'OPENROUTER_VISION_MODEL', 'VITE_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
     if (!process.env[key] && env[key]) process.env[key] = env[key]
   }
 
@@ -509,7 +581,7 @@ export default defineConfig(({ command, mode }) => {
       'import.meta.env.VITE_APP_ENVIRONMENT': JSON.stringify(process.env.VERCEL_ENV || (command === 'serve' ? 'development' : 'production')),
     },
     cacheDir: `node_modules/.vite/${mode}-${patchHash.digest('hex').slice(0, 12)}`,
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), vcslDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
+    plugins: [localDevTools(), sampleAnnotationEditor(), react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), vcslDevMiddleware(), syncAnimationHtml(), basicPitchModelAssets(), privacyDevMiddleware()],
     build: {
       // Manifest powers scripts/report-bundle-size.mjs (analyze:bundle) so the
       // entry-asset closure can be measured reproducibly. No runtime cost.

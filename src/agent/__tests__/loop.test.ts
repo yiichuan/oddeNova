@@ -1,4 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
+import { hummingAttachment } from '../../lib/__tests__/fixtures/humming';
+import {
+  HUMMING_LLM_MODEL_VERSION,
+  HUMMING_LLM_PREPROCESSING_VERSION,
+  type HummingAttachment,
+} from '../../types/humming';
 
 vi.mock('../../services/strudel', () => ({
   validateCodeRuntime: vi.fn().mockReturnValue({ ok: true }),
@@ -14,6 +20,59 @@ import {
   type ProgressEvent,
 } from '../loop';
 import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
+
+describe('sample search diagnostics', () => {
+  it('reports zero calls when the model does not search', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      const { llm } = makeCapturingLLM();
+      await runAgentLoop({ initialCode: '', instruction: 'test', locale: 'zh', systemPrompt: '', llm });
+      expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ finished/),
+        expect.objectContaining({ searchCalls: 0 }));
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it.each([false, true])('offers sample search only when a retriever is injected (%s)', async enabled => {
+    const sampleSearch = vi.fn();
+    const { llm: commitLLM } = makeCapturingLLM();
+    const llm: LLMCaller = {
+      async chatWithTools(...args) {
+        expect(args[1].some(tool => tool.function.name === 'searchSamples')).toBe(enabled);
+        return commitLLM.chatWithTools(...args);
+      },
+    };
+    const result = await runAgentLoop({
+      initialCode: '', instruction: 'test', locale: 'zh', systemPrompt: '', llm,
+      sampleSearch: enabled ? sampleSearch : undefined,
+    });
+    expect(result.committed).toBe(true);
+    expect(sampleSearch).not.toHaveBeenCalled();
+  });
+
+  it('reports rejected queries and distinguishes duplicate reuse from execution', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const llm: LLMCaller = { async chatWithTools() {
+      return { content: null, toolCalls: [
+        { id: 'search-1', name: 'searchSamples', arguments: '{"query":123}' },
+        { id: 'search-2', name: 'searchSamples', arguments: '{"query":123}' },
+        { id: 'done', name: 'commit', arguments: '{}' },
+      ] };
+    } };
+    try {
+      await runAgentLoop({ initialCode: '', instruction: 'test', locale: 'zh', systemPrompt: '', llm });
+      expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ result/),
+        expect.objectContaining({ callId: 'search-1', result: { ok: false, error: expect.stringContaining('无效的采样查询') } }));
+      expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ deduplicated/),
+        expect.objectContaining({ callId: 'search-2' }));
+      expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ finished/),
+        expect.objectContaining({ searchCalls: 1 }));
+    } finally {
+      info.mockRestore();
+    }
+  });
+});
 
 // Minimal LLMCaller that returns a commit tool call on the first invocation,
 // capturing the messages array it receives for assertion.
@@ -969,4 +1028,43 @@ it('sends prepared text with the editor context to the composition model', async
     llm,
     preparedUserContent: 'arrange the score\n\nImage observations\nG4 starts on beat one.',
   }));
+});
+
+it('returns model estimates and note times through the humming tool', async () => {
+  const base = hummingAttachment();
+  const humming: HummingAttachment = {
+    ...base,
+    trimStartSeconds: 0.25,
+    melodyDurationSeconds: 0.5,
+    transcription: {
+      ...base.transcription,
+      engine: 'audio-llm',
+      modelVersion: HUMMING_LLM_MODEL_VERSION,
+      preprocessingVersion: HUMMING_LLM_PREPROCESSING_VERSION,
+      modelRhythm: { bpm: 110, timeSignature: '3/4' },
+      notes: [{ pitchMidi: 60, startSeconds: 0, durationSeconds: 0.5, levelDb: 0 }],
+    },
+  };
+  const chatWithTools = vi.fn<LLMCaller['chatWithTools']>()
+    .mockResolvedValueOnce({ content: null, toolCalls: [{ id: 'read', name: 'analyzeHummingWaveform', arguments: '{}' }] })
+    .mockResolvedValueOnce({ content: 'Measured one C4.', toolCalls: [] });
+
+  await runAgentLoop({
+    initialCode: '',
+    instruction: 'Analyze this humming',
+    locale: 'en',
+    systemPrompt: 'Analyze the recording',
+    llm: { chatWithTools },
+    humming,
+  });
+  expect(chatWithTools.mock.calls[0][1]).toEqual(expect.arrayContaining([
+    expect.objectContaining({ function: expect.objectContaining({ name: 'analyzeHummingWaveform' }) }),
+  ]));
+  const result = chatWithTools.mock.calls[1][0].find(message => message.tool_call_id === 'read');
+  expect(JSON.parse(result!.content as string)).toMatchObject({
+    ok: true,
+    tempo: { bpm: 110 },
+    meter: { time_signature: '3/4' },
+    notes: [{ pitch: 'C4', midi: 60, start_seconds: 0.25, end_seconds: 0.75, duration_seconds: 0.5 }],
+  });
 });

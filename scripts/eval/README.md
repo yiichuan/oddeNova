@@ -68,6 +68,9 @@ npm run eval -- --label v2
 # 只跑单轮用例，跳过 LLM Judge（快速验证）
 npm run eval -- --label v2 --only single --no-judge
 
+# 只评 Router 的回答、查询和执行决策，不生成作品
+npm run eval -- --only router
+
 # 指定特定用例
 npm run eval -- --label v2 --case TC-001,MT-A-001
 

@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { resolveOfficialApiKey } from '../../../../server/official-api-key.js';
 import { requireAuthUser } from '../../../../server/session-utils.js';
 import { hasImageMessages } from '../../../../shared/chat-images.js';
 
@@ -16,10 +17,6 @@ Mark individual unreadable notes or symbols with ? and retain what is readable i
 Before returning, compare the numbered entries with the visible measure ranges for every page. Fill any readable gaps and check that each measure includes all visible voices. If any pages or measures remain untranscribed, list the exact missing locations and state that the result is partial.`;
 
 const KIMI_CHAT_COMPLETIONS_URL = 'https://api.moonshot.cn/v1/chat/completions';
-
-function resolveOfficialApiKey(): string {
-  return process.env.OFFICIAL_API_KEY || process.env.VITE_API_KEY || '';
-}
 
 function boundedString(value: unknown): string | undefined {
   return typeof value === 'string' ? value.slice(0, 300) : undefined;

@@ -116,3 +116,11 @@ describe('llm-loader', () => {
     expect(typeof runtime.runAgent).toBe('function');
   });
 });
+
+it('forwards humming through the lazy runtime alongside images', async () => {
+  const { hummingAttachment } = await import('../../lib/__tests__/fixtures/humming');
+  const { runAgent } = await import('../llm-loader');
+  const attachment = hummingAttachment();
+  await runAgent('arrange', '', undefined, undefined, undefined, [], [], attachment);
+  expect(runAgentMock).toHaveBeenCalledWith('arrange', '', undefined, undefined, undefined, [], [], attachment);
+});

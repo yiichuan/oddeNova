@@ -8,11 +8,14 @@ import type { CodeRevision } from '../../../hooks/useSessions';
 import ConversationView, { type GuidedReply } from '../ConversationView';
 import { DRAFT_SEGMENT_ID } from '../../../lib/draft-diff';
 import { t } from '../../../lib/i18n';
+import { hummingAttachment } from '../../../lib/__tests__/fixtures/humming';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 // lottie-web crashes at import time in happy-dom (no canvas 2D context)
 vi.mock('lottie-react', () => ({ default: () => null }));
+const hummingMocks = vi.hoisted(() => ({ getHummingAsset: vi.fn() }));
+vi.mock('../../../lib/humming-storage', () => hummingMocks);
 
 function setMobileViewport(matches: boolean) {
   const listeners = new Set<(event: MediaQueryListEvent) => void>();
@@ -47,6 +50,7 @@ type PlaybackProps = {
   /** Overrides the helper's own, so one render can run a turn and the next end
    *  it — which is what arms the turn anchor. */
   isLoading?: boolean;
+  liveRouterProgress?: React.ComponentProps<typeof ConversationView>['liveRouterProgress'];
   /** Which key started what is sounding, and the code it put on. */
   pressedSegmentId?: string | null;
   pressedSegmentCode?: string | null;
@@ -92,7 +96,8 @@ function renderConversationView(
   onRollback = vi.fn(),
   isLoading = false,
   revisions?: CodeRevision[],
-  playback: PlaybackProps = {},
+  playback: PlaybackProps & Pick<React.ComponentProps<typeof ConversationView>, 'pendingHumming' | 'hummingWaveformToolCalled' | 'onCancelHumming'> = {},
+  ownerKey?: string,
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -103,6 +108,7 @@ function renderConversationView(
       root.render(
         <ConversationView
           messages={nextMessages}
+          ownerKey={ownerKey}
           revisions={revisions}
           isLoading={isLoading}
           onRollback={onRollback}
@@ -117,6 +123,104 @@ function renderConversationView(
 
   return { container, root, render };
 }
+
+it('groups completed Router progress under Process and puts code tools under Completion', () => {
+  setMobileViewport(false);
+  const user: ChatMessage = { id: 'u', role: 'user', content: 'Arrange this', timestamp: 1 };
+  const progress = (id: string, entry: NonNullable<ChatMessage['routerProgress']>): ChatMessage => ({
+    id, role: 'progress', progressKind: 'router_progress', content: entry.title, routerProgress: entry, timestamp: 2,
+  });
+  const messages = [
+    user,
+    progress('p', { kind: 'plan', title: 'I’ll listen first' }),
+    progress('t', { kind: 'tool', title: 'Reading the waveform', detail: 'Detected five notes' }),
+    progress('s', { kind: 'strategy', title: 'Strategy', detail: 'Use piano for clarity', durationMs: 3200 }),
+    progress('o1', { kind: 'operation', title: 'Writing drums', detail: 'Sparse kick on the downbeat' }),
+    progress('o2', { kind: 'operation', title: 'Writing piano', detail: 'Long release connects the chords' }),
+    progress('v', { kind: 'tool', toolAction: 'validate', title: 'Testing syntax', detail: 'Syntax passed' }),
+    progress('c', { kind: 'tool', title: '提交编曲', detail: 'The candidate was sent' }),
+  ];
+  const { container, root, render } = renderConversationView(messages, vi.fn(), true, undefined, {
+    liveRouterProgress: { stage: 'humming' },
+  });
+  try {
+    const heading = container.querySelector('[data-live-reply-heading]')!;
+    const plan = container.querySelector('[data-router-progress="plan"]')!;
+    const processButton = () => container.querySelector<HTMLButtonElement>('[data-action-process-toggle]');
+    const disclosure = (kind: string) => container.querySelector<HTMLDetailsElement>(`details[data-router-progress="${kind}"]`);
+    expect(heading.textContent).toContain(t('routerStageHumming'));
+    expect(heading.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(plan.textContent).toContain('I’ll listen first');
+    for (const kind of ['tool', 'strategy']) expect(disclosure(kind)?.open).toBe(true);
+    expect(disclosure('strategy')?.querySelector('summary')?.textContent).toContain('3s');
+    expect(disclosure('arrangement')).toBeNull();
+    expect(processButton()).toBeNull();
+
+    render({ isLoading: true, liveRouterProgress: { operation: 'Writing piano', reply: 'Here is' } });
+    expect(container.querySelector('[data-live-reply-heading]')).toBe(heading);
+    expect(heading.textContent).toContain('Writing piano');
+    expect(container.querySelector('[data-router-progress="operation"]')?.textContent).toBe('Sparse kick on the downbeat');
+    expect(container.querySelector('[data-live-router-reply]')?.textContent).toContain('Here is');
+
+    render({ isLoading: false }, [...messages, { id: 'done', role: 'assistant', content: 'Here is your piece.', timestamp: 3 }]);
+    expect(container.querySelector('[data-live-reply-heading]')).toBeNull();
+    expect(container.querySelectorAll('[data-router-progress="operation"]')).toHaveLength(0);
+    expect(processButton()?.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('[data-router-progress]')).toBeNull();
+    act(() => processButton()?.click());
+    for (const kind of ['tool', 'strategy', 'arrangement', 'completion']) expect(disclosure(kind)?.open).toBe(false);
+    expect(container.querySelectorAll('details[data-router-progress="tool"]')).toHaveLength(1);
+    expect(disclosure('completion')?.querySelectorAll('li')).toHaveLength(2);
+    expect(disclosure('completion')?.textContent).toContain('Syntax passed');
+    expect(disclosure('arrangement')?.querySelectorAll('li')).toHaveLength(2);
+    expect(container.querySelector('[data-router-progress="plan"]')?.textContent).toContain('I’ll listen first');
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
+});
+
+it('anchors the new user bubble before following overflowing Router text', () => {
+  setMobileViewport(false);
+  const user: ChatMessage = { id: 'u', role: 'user', content: 'Arrange this', timestamp: 1 };
+  const { container, root, render } = renderConversationView([user]);
+  try {
+    const box = container.querySelector<HTMLDivElement>('.conversation-scroll')!;
+    const bubble = container.querySelector<HTMLElement>('[data-rollback-bubble="u"]')!;
+    Object.defineProperties(box, {
+      clientHeight: { configurable: true, value: 500 },
+      scrollHeight: { configurable: true, value: 1500 },
+    });
+    Object.defineProperties(bubble, {
+      offsetParent: { configurable: true, value: box },
+      offsetTop: { configurable: true, value: 200 },
+    });
+    const scrollTo = vi.fn();
+    box.scrollTo = scrollTo;
+    box.scrollTop = 0;
+    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: 'First line' } });
+    expect(scrollTo).toHaveBeenCalledWith({ top: 200, behavior: 'smooth' });
+    const header = container.querySelector('[data-live-reply-heading]')!;
+    const tail = container.querySelector<HTMLElement>('[data-live-reply-tail]')!;
+    let bottom = 850;
+    stubRect(tail, () => ({ top: bottom - box.scrollTop, bottom: bottom - box.scrollTop }));
+    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: 'First line and more' } });
+    expect(box.scrollTop).toBe(0);
+    act(() => {
+      box.scrollTop = 200;
+      box.dispatchEvent(new Event('scroll'));
+    });
+    expect(box.scrollTop).toBe(366);
+    bottom = 1000;
+    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: 'Latest line' } });
+    expect(box.scrollTop).toBe(516);
+    expect(container.querySelector('[data-live-reply-heading]')).toBe(header);
+    expect(header.classList.contains('sticky')).toBe(true);
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
+});
 
 describe('ConversationView code revisions', () => {
   const roots: Root[] = [];
@@ -1226,6 +1330,46 @@ describe('ConversationView chat streaming', () => {
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
+  it('shows and expands only the current sample search summary while loading', () => {
+    setMobileViewport(false);
+    const user: ChatMessage = { id: 'u1', role: 'user', content: '做一段碎拍', timestamp: 1 };
+    const search: ChatMessage = {
+      id: 'search', role: 'progress', progressKind: 'tool_call', toolName: 'searchSamples',
+      content: 'searchSamples({"queries":', timestamp: 2,
+      sampleSearchSummary: [
+        { query: 'Short kick', labels: ['Sharp attack'] },
+        { query: 'Dry snare', labels: [] },
+        { query: 'Fine hi-hats', labels: [] },
+      ],
+    };
+    const { container, root, render } = renderConversationView([user, search], vi.fn(), true);
+    roots.push(root);
+
+    const summary = container.querySelector('[data-sample-search-summary]')!;
+    expect(summary.textContent).toContain('Short kick');
+    expect(summary.textContent).toContain('Sharp attack');
+    expect(summary.textContent).not.toContain('Fine hi-hats');
+    expect(container.textContent).not.toContain(search.content);
+    expect(container.querySelector('.thinking-lottie')).not.toBeNull();
+    act(() => summary.querySelector('button')!.click());
+    expect(summary.textContent).toContain('Fine hi-hats');
+
+    const nextSearch = { ...search, id: 'search-2' };
+    render({}, [user, search, nextSearch]);
+    expect(container.textContent).not.toContain('Fine hi-hats');
+
+    const arrange = { ...search, id: 'arrange', toolName: 'setCode', content: 'Arranging…' };
+    render({}, [user, search, arrange]);
+    expect(container.textContent).toContain('Arranging…');
+    expect(container.querySelector('[data-sample-search-summary]')).toBeNull();
+
+    render({}, [user, { ...search, sampleSearchSummary: undefined }]);
+    expect(container.textContent).toContain('Searching samples…');
+    expect(container.textContent).not.toContain(search.content);
+    render({ isLoading: false }, [user, search]);
+    expect(container.querySelector('[data-sample-search-summary]')).toBeNull();
+  });
+
   it('renders always-visible top and bottom fades around the conversation viewport', () => {
     setMobileViewport(false);
     const { container, root } = renderConversationView([
@@ -1958,5 +2102,108 @@ describe('ConversationView manual draft segment', () => {
     const lit = [...container.querySelectorAll<HTMLElement>('[data-code-diff-sounding]')];
     expect(lit).toHaveLength(1);
     expect(lit[0].getAttribute('data-code-diff-variant')).toBe('draft');
+  });
+});
+
+describe('ConversationView humming attachments', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) act(() => root.unmount());
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('renders an audio-only message without a duplicate text placeholder and keeps its attachment visible', async () => {
+    setMobileViewport(false);
+    hummingMocks.getHummingAsset.mockResolvedValue(null);
+    const messages: ChatMessage[] = [{
+      id: 'user-humming',
+      role: 'user',
+      content: '',
+      timestamp: 1,
+      humming: {
+        kind: 'humming', schemaVersion: 1,
+        id: '11111111-1111-4111-8111-111111111111',
+        recordingDurationSeconds: 12, trimStartSeconds: 0, melodyDurationSeconds: 11,
+        transcription: {
+          engine: 'basic-pitch', modelVersion: 'spotify-basic-pitch-ts@1.0.1',
+          preprocessingVersion: 'mono-sinc-22050-v1', notes: [], warnings: [],
+        },
+      },
+    }];
+    const { container, root } = renderConversationView(messages, vi.fn(), false, undefined, {}, 'guest');
+    roots.push(root);
+    await act(async () => { await Promise.resolve(); });
+
+    const bubble = container.querySelector<HTMLElement>('[data-rollback-bubble="user-humming"]')!;
+    expect(bubble.textContent).not.toContain('Humming recording');
+    expect(bubble.textContent).toContain('Humming 01');
+    expect(bubble.textContent).toContain('The original recording is no longer on this device');
+    expect(bubble.querySelector('audio')).not.toBeNull();
+    expect(bubble.querySelector<HTMLButtonElement>('[aria-label="Play Humming 01"]')?.disabled).toBe(true);
+  });
+
+  it('keeps the recording player outside the five-line text clamp', async () => {
+    setMobileViewport(false);
+    hummingMocks.getHummingAsset.mockResolvedValue({
+      blob: new Blob(['recording'], { type: 'audio/webm' }),
+    });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:message-audio');
+    const messages: ChatMessage[] = [{
+      id: 'long-humming-user',
+      role: 'user',
+      content: Array.from({ length: 8 }, (_, index) => `Line ${index + 1}`).join('\n'),
+      timestamp: 1,
+      humming: {
+        kind: 'humming', schemaVersion: 1,
+        id: '11111111-1111-4111-8111-111111111111',
+        recordingDurationSeconds: 12, trimStartSeconds: 0, melodyDurationSeconds: 11,
+        transcription: {
+          engine: 'basic-pitch', modelVersion: 'spotify-basic-pitch-ts@1.0.1',
+          preprocessingVersion: 'mono-sinc-22050-v1', notes: [], warnings: [],
+        },
+      },
+    }];
+    const { container, root } = renderConversationView(messages, vi.fn(), false, undefined, {}, 'guest');
+    roots.push(root);
+    await act(async () => { await Promise.resolve(); });
+
+    const bubble = container.querySelector<HTMLElement>('[data-rollback-bubble="long-humming-user"]')!;
+    expect(bubble.querySelector('p')?.className).toContain('line-clamp-5');
+    expect(bubble.querySelector('[data-humming-audio-player]')).not.toBeNull();
+    const card = bubble.querySelector('[data-humming-audio-player]')!;
+    const textBubble = bubble.querySelector('.bg-message-user')!;
+    expect(textBubble.contains(card)).toBe(false);
+    expect(card.compareDocumentPosition(textBubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('renders pending humming in the user turn and the tool status and results on the assistant side', async () => {
+    setMobileViewport(false);
+    hummingMocks.getHummingAsset.mockResolvedValue(null);
+    const onCancelHumming = vi.fn();
+    const { container, root, render } = renderConversationView([], vi.fn(), false, undefined, {
+      pendingHumming: {
+        id: 'pending', text: 'Arrange this', timestamp: 1, takeNumber: 1,
+        takes: [{ id: 'take', audioUrl: 'blob:take', durationSeconds: 2 }],
+      },
+      hummingWaveformToolCalled: true,
+      onCancelHumming,
+    });
+    roots.push(root);
+    const pending = container.querySelector('[data-rollback-bubble="pending"]')!;
+    expect(pending.querySelector('.bg-message-user')?.textContent).toBe('Arrange this');
+    expect(pending.querySelector('audio')?.getAttribute('src')).toBe('blob:take');
+    expect(pending.textContent).not.toContain('analyzeHummingWaveform');
+    expect(container.querySelector('[data-assistant-humming-progress]')?.textContent).toContain('analyzeHummingWaveform');
+
+    render({}, [
+      { id: 'sent', role: 'user', content: 'Arrange this', timestamp: 1, humming: hummingAttachment() },
+      { id: 'reply', role: 'assistant', content: 'Start with a soft piano.', timestamp: 2 },
+    ]);
+    await act(async () => { await Promise.resolve(); });
+    expect(container.querySelector('[data-assistant-humming-progress]')).toBeNull();
+    expect(container.querySelector('[data-message-id="reply"] [aria-label="Humming analysis"]')?.textContent).toContain('C4');
+    expect(container.querySelector('[data-rollback-bubble="sent"] [aria-label="Humming analysis"]')).toBeNull();
   });
 });

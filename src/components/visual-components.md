@@ -19,7 +19,7 @@ components/
 │   ├── ConversationView    对话流
 │   │   └── CodeDiffView / ThinkingLottie
 │   └── ChatInput           输入区
-│       └── ThinkingLevelControl / ContextWindowIndicator* / VoiceButton*
+│       └── ThinkingLevelControl / ContextWindowIndicator* / RecordingDots
 ├── studio/         右栏：工作室（代码 + 动画）
 │   ├── TopActionBar        顶部操作栏（+ mobileTopActions）
 │   ├── CodePanel           代码编辑器
@@ -55,8 +55,7 @@ components/
 ```
 
 每个目录内的 `__tests__/` 只测本目录的组件。带 `*` 的组件当前没有被挂载到界面上
-（`ContextWindowIndicator` 在 `ChatInput` 中被注释保留，`VoiceButton`、`PersonaModal`
-只剩自身测试引用）。
+（`ContextWindowIndicator` 在 `ChatInput` 中被注释保留，`PersonaModal` 只剩自身测试引用）。
 
 ---
 
@@ -291,4 +290,4 @@ components/
 - API 密钥弹窗（`ApiKeyModal`）：屏幕居中（模态）
 - 分享加载中 / 加载失败提示：全屏遮罩 · 居中
 - WAV 导出进度 / 弹窗（`TopActionBar` 内）：屏幕居中（模态）
-- 语音输入按钮（`VoiceButton`，按住说话）：随输入区（当前浏览器支持时）
+- 录音菜单（`ChatInput`）：语音和哼唱共用录音控件与 `RecordingDots` 音量图。语音由 DeepSeek ASR 转写，结果填入输入框。

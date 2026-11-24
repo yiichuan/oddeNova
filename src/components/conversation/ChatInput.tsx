@@ -3,13 +3,18 @@ import MessageImages from './MessageImages';
 import { rememberUploadedImagePreview } from '../../lib/image-preview-memory';
 import { MAX_MESSAGE_IMAGES } from '../../lib/image-types';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ChevronUp, LoaderCircle, MessageCircleMore, Mic, MicVocal, Music2, X } from 'lucide-react';
 import { ArrowUpIcon, StopIcon } from '../icons';
-import { ImagePlus, LoaderCircle, X } from 'lucide-react';
+import { ImagePlus } from 'lucide-react';
 import ThinkingLevelControl from './ThinkingLevelControl';
+import HummingAudioPlayer from './HummingAudioPlayer';
+import RecordingDots from './RecordingDots';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
 import { stepwiseOptionText } from '../../services/suggestions';
 import type { ChatEntryPoint, InputMode } from '../../hooks/useChat';
+import type { HummingInputController } from '../../hooks/useHummingInput';
+import type { HummingAttachment } from '../../types/humming';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useTypewriter } from '../../hooks/useTypewriter';
 
@@ -26,13 +31,23 @@ function drainImageUploads(queue: ImageUploadQueue): void {
     });
   }
 }
+import { useDeepSeekSpeech } from '../../hooks/useDeepSeekSpeech';
+import { zh } from '../../lib/i18n';
 
+const RECORDING_ICON_SIZE = 14;
 
 // Split text into typewriter units: CJK (and fullwidth punctuation) reveal
 // character by character, latin script word by word (a run of non-CJK,
 // non-space characters plus its trailing whitespace is one unit).
 function tokenizeForTyping(s: string): string[] {
   return s.match(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]|[^\u3000-\u303f\u4e00-\u9fff\uff00-\uffef\s]+\s*|\s+/g) ?? [];
+}
+
+function formatRecordingTime(seconds: number): string {
+  const elapsed = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(elapsed / 60);
+  const remainingSeconds = (elapsed % 60).toString().padStart(2, '0');
+  return `${minutes}:${remainingSeconds}`;
 }
 
 // Cap on the auto-grow height (px) of the textarea itself (excludes the
@@ -70,7 +85,12 @@ interface ChatInputProps {
   isLoading: boolean;
   engineReady: boolean;
   engineStatus?: 'initializing' | 'ready' | 'failed';
-  onSendText: (text: string, entryPoint: ChatEntryPoint, images?: ImageAttachment[]) => void | Promise<void>;
+  onSendText: (
+    text: string,
+    entryPoint: ChatEntryPoint,
+    images?: ImageAttachment[],
+    humming?: HummingAttachment,
+  ) => boolean | void | Promise<boolean | void>;
   onReinitEngine: () => void;
   onStop?: () => void;
   prefill?: string;
@@ -106,6 +126,8 @@ interface ChatInputProps {
   signedIn?: boolean;
   /** Opens the sign-in window from the "sign in to add images" notice. */
   onRequestSignIn?: () => void;
+  humming?: HummingInputController;
+  recordingScope?: string;
 }
 
 export interface PresetLock {
@@ -141,6 +163,8 @@ export default function ChatInput({
   guided = false,
   signedIn = true,
   onRequestSignIn,
+  humming,
+  recordingScope,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [choiceSendError, setChoiceSendError] = useState<{ optionsKey: string; message: string } | null>(null);
@@ -243,14 +267,47 @@ export default function ChatInput({
     }
     drainImageUploads(queue);
   };
+  const [recordingMenuOpen, setRecordingMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const recordingActionRef = useRef<HTMLButtonElement>(null);
+  const recordingCancelRef = useRef<HTMLButtonElement>(null);
+  const wasVoiceBusyRef = useRef(false);
+  const voiceSpeech = useDeepSeekSpeech((spoken) => {
+    adoptedSuggestionRef.current = null;
+    if (spoken.trim()) setText(current => current.trim() ? `${current.trimEnd()} ${spoken.trim()}` : spoken.trim());
+  });
+  const voiceBusy = voiceSpeech.isStarting || voiceSpeech.mode !== 'idle';
+  const cancelVoice = voiceSpeech.cancel;
+  useEffect(() => () => cancelVoice(), [recordingScope, cancelVoice]);
+  useEffect(() => {
+    if (!recordingMenuOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setRecordingMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setRecordingMenuOpen(false); };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape); };
+  }, [recordingMenuOpen]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const adoptedSuggestionRef = useRef<string | null>(null);
   // Mobile has no Tab key, so the return key adopts the suggestion instead
-  // (see onKeyDown), and the footer hint points at that key rather than Tab.
+  // (see onKeyDown), with a corresponding keycap beside the suggestion.
   const isMobile = useIsMobile();
-  // Drives the mobile "return to fill" hint, which is only actionable once the
-  // on-screen keyboard is up.
+  // The mobile keycap only appears once the on-screen keyboard is requested.
   const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    const mode = voiceSpeech.mode;
+    if (mode === 'recording') {
+      recordingActionRef.current?.focus({ preventScroll: true });
+    } else if (voiceBusy) {
+      recordingCancelRef.current?.focus({ preventScroll: true });
+    } else if (wasVoiceBusyRef.current) {
+      (isMobile ? recordingActionRef.current : textareaRef.current)?.focus({ preventScroll: true });
+    }
+    wasVoiceBusyRef.current = voiceBusy;
+  }, [voiceBusy, voiceSpeech.mode, isMobile]);
 
   // AirJelly reachability, checked once on mount — Windows is excluded
   // (AirJelly Desktop doesn't support it). Runs once regardless of
@@ -289,6 +346,8 @@ export default function ChatInput({
   const [typing, setTyping] = useState<{ sug: string | null; count: number }>({ sug: null, count: 0 });
   // Fade-out phase between dwell and the next suggestion (blur + opacity).
   const [suggestionFading, setSuggestionFading] = useState(false);
+  const [keyHintFor, setKeyHintFor] = useState<{ index: number; text: string } | null>(null);
+  const [tabInteraction, setTabInteraction] = useState<(NonNullable<typeof keyHintFor> & { hovering: boolean }) | null>(null);
   const suggestionList = showStepwiseChoices || inputMode === 'choice' || presetLock || guided
     ? []
     : moodSuggestionActive
@@ -296,10 +355,37 @@ export default function ChatInput({
       : (suggestions ?? []);
   const currentSuggestion = suggestionList.length > 0 ? suggestionList[suggestionIdx % suggestionList.length] : null;
   const suggestionActive =
-    currentSuggestion !== null && text === '' && replayValue === undefined && !isLoading && !isVideoMode && !moodPending;
+    currentSuggestion !== null && text === '' && !voiceBusy && replayValue === undefined && !isLoading && !isVideoMode && !moodPending;
+  const tabHintInteracted = !isMobile && tabInteraction !== null
+    && tabInteraction.index === suggestionIdx && tabInteraction.text === currentSuggestion;
+  const tabHintHovered = suggestionActive && tabHintInteracted && tabInteraction.hovering;
+  const tabHintTooltipRef = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const tooltip = tabHintTooltipRef.current;
+    const key = tooltip?.parentElement;
+    const composer = key?.closest('.chat-input-surface');
+    if (!tabHintHovered || !tooltip || !key || !composer) return;
+
+    const positionTooltip = () => {
+      const inset = 8;
+      const bounds = composer.getBoundingClientRect();
+      const anchor = key.getBoundingClientRect();
+      tooltip.style.maxWidth = `${Math.max(0, bounds.width - inset * 2)}px`;
+      const width = tooltip.offsetWidth;
+      const centered = anchor.left + (anchor.width - width) / 2;
+      const left = Math.max(bounds.left + inset, Math.min(centered, bounds.right - inset - width));
+      tooltip.style.left = `${left - anchor.left}px`;
+    };
+    positionTooltip();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(positionTooltip);
+    observer.observe(composer);
+    observer.observe(tooltip);
+    return () => observer.disconnect();
+  }, [tabHintHovered]);
 
   useEffect(() => {
-    if (!currentSuggestion) return;
+    if (!currentSuggestion || tabHintHovered) return;
     if (suggestionFading) {
       // Sequential fade-out: blur first (200ms), then opacity fades starting
       // 100ms in (250ms, ending at 350ms) — matching the inline transition
@@ -326,12 +412,21 @@ export default function ChatInput({
       const id = setTimeout(() => setSuggestionFading(true), 5500);
       return () => clearTimeout(id);
     }
-  }, [currentSuggestion, typing, suggestionList.length, suggestionFading]);
+  }, [currentSuggestion, typing, suggestionList.length, suggestionFading, tabHintHovered]);
 
   const typedPlaceholder =
     currentSuggestion !== null && typing.sug === currentSuggestion
       ? tokenizeForTyping(currentSuggestion).slice(0, typing.count).join('')
       : '';
+  const canRevealKeyHint = suggestionActive && (!isMobile || focused) && Boolean(typedPlaceholder)
+    && typedPlaceholder === currentSuggestion;
+  useEffect(() => {
+    if (!canRevealKeyHint || currentSuggestion === null) return;
+    const id = setTimeout(() => setKeyHintFor({ index: suggestionIdx, text: currentSuggestion }), 350);
+    return () => clearTimeout(id);
+  }, [canRevealKeyHint, currentSuggestion, suggestionIdx]);
+  const showKeyHint = canRevealKeyHint && keyHintFor !== null
+    && keyHintFor.index === suggestionIdx && keyHintFor.text === currentSuggestion;
 
   useEffect(() => {
     if (prefill || prefillImages) {
@@ -357,11 +452,12 @@ export default function ChatInput({
 
   // The guide's preset request types itself into the field as it appears.
   const presetValue = useTypewriter(presetLock?.text, presetLock?.startTyping ?? true);
+  const displayedText = replayValue ?? presetValue ?? (humming?.pendingSubmission ? '' : text);
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     resizeTextarea(el);
-  }, [text, presetValue]);
+  }, [displayedText]);
 
   // How tall the field has to be is a question about how wide it is, and in the
   // studio almost nothing that changes its width is a window resize: the
@@ -412,7 +508,28 @@ export default function ChatInput({
       return;
     }
     const value = text.trim();
-    if ((!value && !images.length) || isLoading || pendingSend || imageBusy) return;
+    if (
+      isLoading
+      || moodPending
+      || voiceSpeech.mode !== 'idle' || voiceSpeech.isStarting
+      || humming?.isRecording
+      || humming?.isStarting
+      || humming?.isFinalizingRecording
+      || humming?.isRerecording
+      || humming?.isTranscribing
+      || humming?.isSavingDraft
+      || humming?.isSavingReplacement
+      || humming?.replacementCandidate
+    ) return;
+    if (!value && !images.length && !humming?.draft) return;
+    const hummingEntryPoint = adoptedSuggestionRef.current === value ? 'suggestion' : 'text';
+    if (humming?.draft) {
+      void humming.submit(value || t('hummingDefaultInstruction'), hummingEntryPoint).then((accepted) => {
+        if (accepted) setText('');
+      });
+      return;
+    }
+    if ((!value && !images.length && !humming?.draft) || isLoading || pendingSend || imageBusy) return;
     const sendMood = moodSuggestionActive && value === moodSuggestion;
     if (!beginSend(sendMood ? 'mood' : 'message')) return;
     const entryPoint: ChatEntryPoint =
@@ -452,6 +569,7 @@ export default function ChatInput({
   const adoptSuggestion = () => {
     if (suggestionActive && currentSuggestion) {
       adoptedSuggestionRef.current = currentSuggestion;
+      setTabInteraction(null);
       setText(currentSuggestion);
     }
   };
@@ -503,7 +621,69 @@ export default function ChatInput({
     textareaRef.current?.focus();
   };
 
-  const inputDisabled = (isLoading || moodPending) && replayValue === undefined;
+  const inputDisabled = (isLoading || moodPending || Boolean(humming?.isTranscribing))
+    && replayValue === undefined;
+  const recordingAvailable = !isVideoMode && !presetLock && replayValue === undefined;
+  const voiceEnabled = recordingAvailable && voiceSpeech.supported;
+  const startVoiceInput = () => {
+    setRecordingMenuOpen(false);
+    let key = '';
+    try {
+      key = localStorage.getItem('vibe_api_key_deepseek')?.trim()
+        || (localStorage.getItem('vibe_provider') === 'deepseek'
+          ? localStorage.getItem('vibe_api_key')?.trim() ?? ''
+          : '');
+    } catch { /* use official proxy */ }
+    void voiceSpeech.start(key);
+  };
+  const hummingEnabled = recordingAvailable && Boolean(humming) && inputMode !== 'choice';
+  const activeHumming = hummingEnabled && humming
+    && (humming.isStarting || humming.isRecording || humming.isFinalizingRecording)
+    ? humming : null;
+  const captureMode = activeHumming ? 'humming'
+    : voiceBusy ? 'voice' : null;
+  const captureActive = captureMode !== null;
+  const showCaptureControl = voiceEnabled || hummingEnabled || captureActive;
+  const takes = hummingEnabled && humming?.draft
+    ? [...humming.earlierTakes, { draft: humming.draft, audioUrl: humming.audioUrl }]
+    : [];
+  const micRecording = activeHumming ? activeHumming.isRecording : voiceSpeech.mode === 'recording';
+  const receivingRecording = activeHumming
+    ? activeHumming.isFinalizingRecording
+    : voiceSpeech.mode === 'transcribing';
+  const capturePhase = receivingRecording ? 'receiving'
+    : micRecording ? 'recording' : captureActive ? 'starting' : 'idle';
+  const captureStatus = receivingRecording ? (zh ? '正在接收' : 'Receiving')
+    : activeHumming
+      ? t(micRecording
+        ? (activeHumming.isRerecording ? 'hummingRerecordingNow' : 'hummingRecordingNow')
+        : (activeHumming.isRerecording ? 'hummingRerecordStarting' : 'hummingStarting'))
+      : micRecording ? (zh ? '语音录音中' : 'Recording voice') : t('hummingStarting');
+  const canCancelCapture = !activeHumming?.isFinalizingRecording;
+  const cancelCaptureLabel = voiceSpeech.mode === 'transcribing'
+    ? t('hummingCancelRecognition')
+    : t(activeHumming?.isRerecording ? 'hummingCancelRerecord' : 'hummingCancelRecording');
+  const hummingErrorKey: Record<string, Parameters<typeof t>[0]> = {
+    microphone_unavailable: 'hummingMicUnavailable',
+    microphone_denied: 'hummingMicDenied',
+    microphone_failed: 'hummingMicFailed',
+    recorder_unavailable: 'hummingMicUnavailable',
+    recorder_failed: 'hummingMicFailed',
+    empty_recording: 'hummingMicFailed',
+    recording_interrupted: 'hummingMicFailed',
+    recording_unavailable: 'hummingAudioUnavailable',
+    rerecord_failed: 'hummingRerecordFailed',
+    replacement_storage_unavailable: 'hummingReplacementStorageUnavailable',
+    storage_unavailable: 'hummingStorageUnavailable',
+    draft_load_failed: 'hummingStorageUnavailable',
+    no_melody_detected: 'hummingNoMelody',
+    too_many_notes: 'hummingNoMelody',
+    timeout: 'hummingTimeout',
+    sign_in_required: 'hummingUnderstandingSignIn',
+    rate_limited: 'hummingUnderstandingRateLimited',
+    attachment_too_large: 'hummingFailed',
+    transcription_failed: 'hummingFailed',
+  };
   const choiceOptionDisabled = inputDisabled || pendingSend !== null;
   // The waiting fade, applied per part (see the card below): everything that
   // is genuinely out of reach while the agent answers, and nothing else.
@@ -634,8 +814,36 @@ export default function ChatInput({
             a subtree, so a child cannot win it back — the fade has to skip it
             on the way down.) */}
         <div>
+          {hummingEnabled && humming?.draft && !humming.pendingSubmission && (
+            <div className="flex flex-wrap gap-2 px-3 pb-3" data-chat-input-focus-ignore>
+              {takes.map(({ draft, audioUrl }, index) => (
+                <HummingAudioPlayer
+                  key={draft.id}
+                  compact
+                  label={`${zh ? '哼唱' : 'Humming'} ${String(index + 1).padStart(2, '0')}`}
+                  src={audioUrl}
+                  durationSeconds={draft.durationSeconds}
+                  disabled={captureActive}
+                  loading={humming.isTranscribing}
+                  onRemove={humming.isTranscribing ? humming.cancelTranscription : () => humming.discard(draft.id)}
+                  removeLabel={t(humming.isTranscribing ? 'hummingCancelRecognition' : 'hummingDelete')}
+                  removeDisabled={captureActive || humming.isSavingDraft || humming.isSavingReplacement}
+                />
+              ))}
+              {humming.replacementCandidate && (
+                <HummingAudioPlayer
+                  compact
+                  label={`${zh ? '哼唱' : 'Humming'} ${String(takes.length + 1).padStart(2, '0')}`}
+                  src={humming.replacementAudioUrl}
+                  durationSeconds={humming.replacementCandidate.durationSeconds}
+                  onRemove={humming.useOriginalRecording}
+                  removeDisabled={humming.isSavingReplacement}
+                />
+              )}
+            </div>
+          )}
           {/* Wraps just the textarea so the suggestion overlay below can be
-              positioned absolute against its box, not the card as a whole
+              laid over its box, not the card as a whole
               (which also includes the footer). Top padding lives on the card
               above, not here — inside the textarea it would be scrolled out of
               view (and off the top of the visible box) once content overflows
@@ -644,26 +852,29 @@ export default function ChatInput({
               from the card edge, giving the scrollbar an 8px gap. The textarea's
               own pr below is reduced by the same 8px so the text position is
               unchanged. */}
-          <div className={`relative pr-3 ${waitingDim}`}>
+          <div className={`grid pr-3 ${waitingDim}`}>
             <textarea
               ref={textareaRef}
               data-chat-input-textarea
-              value={replayValue !== undefined ? replayValue : presetValue ?? text}
+              value={displayedText}
               onChange={replayValue !== undefined || presetLock ? undefined : (e) => {
                 adoptedSuggestionRef.current = null;
+                setTabInteraction(null);
                 setText(e.target.value);
               }}
-              readOnly={replayValue !== undefined || presetLock !== undefined}
+              readOnly={replayValue !== undefined || presetLock !== undefined || voiceBusy}
               // A read-only field can still take focus from a tap; with no
               // keyboard asked for, a phone does not raise one over the preset.
               inputMode={presetLock ? 'none' : undefined}
               aria-busy={presetLock?.busy || undefined}
+              aria-keyshortcuts={showKeyHint ? (isMobile ? 'Enter' : 'Tab') : undefined}
               onFocus={() => {
                 setFocused(true);
                 onFocusChange?.(true);
               }}
               onBlur={() => {
                 setFocused(false);
+                if (isMobile) setKeyHintFor(null);
                 onFocusChange?.(false);
               }}
               onKeyDown={(e) => {
@@ -707,7 +918,7 @@ export default function ChatInput({
               // screen the conversation also has to fit on and that slack is
               // taken out of the reading. The auto-grow cap above is untouched,
               // so typing still opens it exactly as far as it ever did.
-              className={`w-full ${isMobile ? 'min-h-[53px]' : 'min-h-[73px]'} pl-4 pr-3 pb-1 resize-none overflow-hidden bg-transparent text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed`}
+              className={`col-start-1 row-start-1 w-full ${isMobile ? 'min-h-[53px]' : 'min-h-[73px]'} pl-4 pr-3 pb-1 resize-none overflow-hidden bg-transparent text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed`}
               style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
             />
 
@@ -719,12 +930,7 @@ export default function ChatInput({
                 to stop iOS auto-zoom on focus and can't be lowered, so the
                 overlay matches it to avoid a jump when a suggestion is adopted. */}
             {suggestionActive && (
-              <div
-                // Clamped to what the shorter mobile field can actually show,
-                // so a long suggestion ends on a line rather than on one sliced
-                // through the middle.
-                className={`pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden ${isMobile ? 'line-clamp-2' : 'line-clamp-3'} text-base md:text-sm text-text-muted`}
-              >
+              <div className="pointer-events-none z-10 col-start-1 row-start-1 min-w-0 break-words pl-4 pr-3 pb-1 text-base md:text-sm text-text-muted">
                 {/* Only the suggestion text blurs/fades between rotations — blur
                     runs first, then opacity fades in on its heels (sequential, not
                     simultaneous), via an explicit transition-delay on opacity.
@@ -741,73 +947,180 @@ export default function ChatInput({
                   }}
                 >
                   {typedPlaceholder}
+                  {showKeyHint && <>{' '}
+                    <span
+                      key={suggestionIdx}
+                      className="chat-suggestion-key"
+                      aria-hidden="true"
+                      data-motion={tabHintHovered ? 'hover' : tabHintInteracted ? 'rest' : 'intro'}
+                      onMouseEnter={isMobile ? undefined : () => {
+                        setTabInteraction({ index: suggestionIdx, text: typedPlaceholder, hovering: true });
+                        setSuggestionFading(false);
+                      }}
+                      onMouseLeave={isMobile ? undefined : () => {
+                        setTabInteraction({ index: suggestionIdx, text: typedPlaceholder, hovering: false });
+                      }}
+                    >
+                      <kbd className="chat-suggestion-key-cap">
+                        <span className="text-text-primary">{isMobile ? '⏎' : 'Tab'}</span>
+                      </kbd>
+                      <span className="chat-suggestion-key-impact" />
+                      {tabHintHovered && <span ref={tabHintTooltipRef} className="chat-suggestion-key-tooltip">{t('tabToFill')}</span>}
+                    </span>
+                  </>}
                 </span>
               </div>
             )}
           </div>
 
-          {/* Footer row — hint/status on the left, send button on the right.
+          {voiceSpeech.error && (
+            <p role="alert" className="mx-4 mb-2 text-xs text-error">
+              {t(voiceSpeech.error === 'MIC_PERMISSION_DENIED' ? 'voiceMicPermissionDenied'
+                : voiceSpeech.error === 'MIC_NOT_FOUND' ? 'voiceMicNotFound'
+                  : voiceSpeech.error === 'EMPTY_RECORDING' ? 'voiceEmptyRecording'
+                    : voiceSpeech.error === 'RECORDING_FAILED' || voiceSpeech.error === 'RECORDER_NOT_ACTIVE'
+                      ? 'voiceRecordingFailed' : 'voiceTranscriptionFailed')}
+            </p>
+          )}
+          {hummingEnabled && humming?.error && !humming.replacementCandidate && (
+            <p role="status" className="mx-4 mb-2 text-[11px] text-error">
+              {t(hummingErrorKey[humming.error] ?? 'hummingFailed')}
+            </p>
+          )}
+
+          {/* Footer row — attachments and status on the left, send on the right.
               Real layout, always visible regardless of textarea scroll state. */}
-          <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
-            <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 ${waitingDim}`}>
-              {imageBusy && <span role="status" className="sr-only">{t('processingImages')}</span>}
-              {presetLock ? null : engineStatus !== 'ready' ? (
-                <div className="flex items-center gap-2 text-[12px] text-text-muted">
-                  <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-error' : 'bg-text-muted'}`} />
-                  <span>{engineStatus === 'failed' ? t('engineFailed') : t('engineInitializing')}</span>
-                  {engineStatus === 'failed' && (
-                    <button
-                      type="button"
-                      onClick={onReinitEngine}
-                      className="text-[18px] font-thin text-text-secondary/60 hover:text-text-primary transition-colors leading-none relative -top-[2px]"
-                      title={t('restartEngine')}
-                    >
-                      ↺
-                    </button>
+          <div className="relative z-20 flex items-center gap-2 px-2 pt-1 pb-2">
+            {!presetLock && !isVideoMode && replayValue === undefined && (
+              <button
+                type="button"
+                title={t('addImage')}
+                aria-label={t('addImage')}
+                disabled={sendingImages || inputDisabled || images.length + pendingImages.length >= MAX_MESSAGE_IMAGES}
+                onClick={() => {
+                  if (!signedIn) { setImageError(''); setImageNeedsSignIn(true); return; }
+                  fileRef.current?.click();
+                }}
+                className={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 ${
+                  fileDragActive
+                    ? 'bg-brand-accent text-on-accent'
+                    : 'text-text-muted hover:bg-text-primary/10 hover:text-text-primary disabled:hover:bg-transparent disabled:hover:text-text-muted'
+                }`}
+              >
+                <ImagePlus size={20} strokeWidth={1.8} aria-hidden="true" />
+              </button>
+            )}
+            <div className={`relative flex min-w-0 flex-1 items-center ${showCaptureControl ? 'min-h-11' : ''}`}>
+              {!captureActive && (
+                <div className={`flex min-w-0 flex-1 items-center justify-between gap-2 ${showCaptureControl ? 'pr-11' : ''}`}>
+                  <div className={`min-w-0 ${waitingDim}`}>
+                    {presetLock ? (
+                      <div className="truncate text-[12px] text-text-muted">{t('onboardingPresetBadge')}</div>
+                    ) : engineStatus !== 'ready' ? (
+                      <div className="flex items-center gap-2 text-[12px] text-text-muted">
+                        <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-error' : 'bg-text-muted'}`} />
+                        <span>{engineStatus === 'failed' ? t('engineFailed') : t('engineInitializing')}</span>
+                        {engineStatus === 'failed' && (
+                          <button
+                            type="button"
+                            onClick={onReinitEngine}
+                            className="text-[18px] font-thin text-text-secondary/60 hover:text-text-primary transition-colors leading-none relative -top-[2px]"
+                            title={t('restartEngine')}
+                          >
+                            ↺
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                  {replayValue === undefined && !presetLock && (
+                    <ThinkingLevelControl
+                      disabled={inputDisabled}
+                      shouldPreserveInputFocus={() => document.activeElement === textareaRef.current}
+                    />
                   )}
                 </div>
-               ) : suggestionActive && (!isMobile || focused) ? (
-                <div className="pointer-events-none text-[12px] text-text-muted">
-                  {isMobile ? t('enterToFill') : t('tabToFill')}
+              )}
+              {showCaptureControl && (
+                <div ref={menuRef} className="chat-recording-pill absolute right-0 top-1/2 h-11 -translate-y-1/2" data-expanded={captureActive} data-capture-phase={capturePhase} data-chat-input-focus-ignore>
+                  <div aria-hidden="true" className="chat-recording-pill-surface pointer-events-none absolute right-px top-1/2 h-[30px] -translate-y-1/2 rounded-full bg-conversation-surface" />
+                  {captureActive && (
+                    <div className="chat-recording-pill-content absolute inset-y-0 left-0 right-8 flex min-w-0 items-center gap-1 overflow-hidden pr-1">
+                      {canCancelCapture && (
+                        <button
+                          ref={recordingCancelRef}
+                          type="button"
+                          onClick={activeHumming
+                            ? (activeHumming.isRerecording ? activeHumming.cancelRerecord : activeHumming.cancelRecording)
+                            : voiceSpeech.cancel}
+                          aria-label={cancelCaptureLabel}
+                          title={cancelCaptureLabel}
+                          className="inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-text-primary"
+                        >
+                          <X size={RECORDING_ICON_SIZE} />
+                        </button>
+                      )}
+                      <span
+                        className={micRecording ? 'sr-only' : `truncate px-2 text-xs text-text-secondary ${
+                          receivingRecording
+                            ? 'absolute left-[30px] right-0 top-1/2 -translate-y-1/2 text-center'
+                            : 'min-w-0 flex-1'
+                        }`}
+                        role="status"
+                      >
+                        {captureStatus}
+                      </span>
+                      {micRecording && (
+                        <>
+                          <RecordingDots stream={activeHumming ? activeHumming.recordingStream : voiceSpeech.streamRef.current} />
+                          <span role="timer" className="shrink-0 text-xs tabular-nums text-text-secondary">
+                            {formatRecordingTime(activeHumming?.recordingElapsedSeconds ?? voiceSpeech.elapsedSeconds)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  <button
+                    ref={recordingActionRef}
+                    type="button"
+                    aria-label={receivingRecording ? captureStatus : captureActive
+                      ? t('hummingStop') : (zh ? '选择录音方式' : 'Choose recording mode')}
+                    aria-expanded={captureActive ? undefined : recordingMenuOpen}
+                    aria-haspopup={captureActive ? undefined : 'menu'}
+                    disabled={captureActive ? !micRecording : isLoading || moodPending || humming?.isTranscribing}
+                    onClick={captureActive
+                      ? (activeHumming ? activeHumming.stopRecording : voiceSpeech.stop)
+                      : () => setRecordingMenuOpen(open => !open)}
+                    className="chat-recording-pill-action absolute right-0 top-1/2 grid h-11 w-8 -translate-y-1/2 place-items-center rounded-full"
+                  >
+                    <span aria-hidden="true" className="chat-recording-pill-mic absolute left-1/2 top-1/2">
+                      <Mic size={17} />
+                    </span>
+                    <span aria-hidden="true" className="chat-recording-pill-chevron absolute right-0 top-1/2">
+                      <ChevronUp size={13} />
+                    </span>
+                    <span aria-hidden="true" className="chat-recording-pill-stop col-start-1 row-start-1">
+                      <StopIcon size={RECORDING_ICON_SIZE} />
+                    </span>
+                    <span aria-hidden="true" className="chat-recording-pill-progress col-start-1 row-start-1">
+                      <LoaderCircle size={RECORDING_ICON_SIZE} className={receivingRecording ? 'animate-spin motion-reduce:animate-none' : undefined} />
+                    </span>
+                  </button>
+                  {recordingMenuOpen && !captureActive && (voiceEnabled || hummingEnabled) && <div role="menu" className="absolute bottom-full right-0 z-30 mb-2 w-40 rounded-xl border border-border bg-conversation-surface p-1 shadow-lg">
+                    <button type="button" role="menuitem"
+                      className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-text-primary hover:bg-surface-hover disabled:opacity-50"
+                      disabled={!voiceEnabled || inputDisabled || imageBusy} onClick={startVoiceInput}
+                    ><Mic size={16} />{t('startVoiceInput')}</button>
+                    {hummingEnabled && humming && <button type="button" role="menuitem" className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-text-primary hover:bg-surface-hover" disabled={!humming.canRecord} onClick={() => { setRecordingMenuOpen(false); humming.startRecording(); }}><Music2 size={16} />{zh ? '哼唱输入' : 'Humming input'}</button>}
+                  </div>}
                 </div>
-              ) : null}
+              )}
             </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-              {replayValue === undefined && !presetLock && (
-                <ThinkingLevelControl
-                  disabled={inputDisabled}
-                  // Read at press time from the DOM, not from React's `focused`
-                  // state: the event handler needs the fact as it is right now,
-                  // and only an actual textarea focus is worth protecting (see
-                  // ThinkingLevelControl's pointerdown protection).
-                  shouldPreserveInputFocus={() => document.activeElement === textareaRef.current}
-                />
-              )}
-              {!presetLock && !isVideoMode && replayValue === undefined && (
-                <button
-                  type="button"
-                  title={t('addImage')}
-                  aria-label={t('addImage')}
-                  disabled={sendingImages || inputDisabled || images.length + pendingImages.length >= MAX_MESSAGE_IMAGES}
-                  onClick={() => {
-                    if (!signedIn) { setImageError(''); setImageNeedsSignIn(true); return; }
-                    fileRef.current?.click();
-                  }}
-                  className={`mr-1.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 ${
-                    fileDragActive
-                      ? 'bg-brand-accent text-on-accent'
-                      : 'text-text-muted hover:bg-text-primary/10 hover:text-text-primary disabled:hover:bg-transparent disabled:hover:text-text-muted'
-                  }`}
-                >
-                  <ImagePlus size={20} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              )}
               {replayValue !== undefined ? (
                 <button
                   type="button"
                   disabled={!replayValue.trim()}
-                  className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 disabled:cursor-not-allowed disabled:opacity-50"
                   title={t('send')}
                 >
                   <ArrowUpIcon size={18} />
@@ -831,7 +1144,19 @@ export default function ChatInput({
                 <button
                   type="submit"
                   data-onboarding-target="send"
-                  disabled={presetLock ? presetLock.busy : pendingSend !== null || imageBusy || (!text.trim() && !images.length)}
+                  disabled={presetLock ? presetLock.busy : (
+                    (!text.trim() && !images.length && !humming?.draft)
+                    || pendingSend !== null || imageBusy
+                    || voiceSpeech.mode !== 'idle' || voiceSpeech.isStarting
+                    || Boolean(humming?.isStarting)
+                    || Boolean(humming?.isRecording)
+                    || Boolean(humming?.isFinalizingRecording)
+                    || Boolean(humming?.isRerecording)
+                    || Boolean(humming?.isTranscribing)
+                    || Boolean(humming?.isSavingDraft)
+                    || Boolean(humming?.isSavingReplacement)
+                    || Boolean(humming?.replacementCandidate)
+                  )}
                   /* The guide's send on a phone is pressed with a thumb, so
                      its reach grows to 44px round the 30px disc. Only then:
                      the thinking-level control that sits beside the key
@@ -843,10 +1168,11 @@ export default function ChatInput({
                   title={t('send')}
                   aria-label={t('send')}
                 >
-                  <ArrowUpIcon size={18} />
+                  {captureMode === 'voice' ? <MessageCircleMore size={RECORDING_ICON_SIZE} aria-hidden="true" />
+                    : captureMode === 'humming' ? <MicVocal size={RECORDING_ICON_SIZE} aria-hidden="true" />
+                      : <ArrowUpIcon size={18} />}
                 </button>
               )}
-            </div>
           </div>
         </div>
       </div>

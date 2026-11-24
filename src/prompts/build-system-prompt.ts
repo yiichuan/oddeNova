@@ -7,11 +7,12 @@ export interface BuildSystemPromptInput {
   moodContext?: string;
   persona?: ActivePersona;
   locale?: 'zh' | 'en';
+  executionOnly?: boolean;
 }
 
 const DEFAULT_PERSONA: ActivePersona = { id: BUILTIN_PERSONA_ID, name: 'oddeNova' };
 
-function resolvePersonaBlock(persona: ActivePersona, lang: 'zh' | 'en'): { block: string; name: string } {
+export function resolvePersonaBlock(persona: ActivePersona, lang: 'zh' | 'en'): { block: string; name: string } {
   if (persona.id === BUILTIN_PERSONA_ID) {
     return { block: buildPersonaBlock(lang), name: 'oddeNova' };
   }
@@ -28,9 +29,10 @@ export function buildSystemPrompt({
   moodContext,
   persona = DEFAULT_PERSONA,
   locale,
+  executionOnly,
 }: BuildSystemPromptInput): string {
   const lang = locale ?? (isZh() ? 'zh' : 'en');
-  const { block, name } = resolvePersonaBlock(persona, lang);
+  const { block, name } = executionOnly ? { block: '', name: 'Session Agent' } : resolvePersonaBlock(persona, lang);
   const base = lang === 'zh'
     ? AGENT_SYSTEM_PROMPT_OPENAI(block, name)
     : AGENT_SYSTEM_PROMPT_EN(block, name);

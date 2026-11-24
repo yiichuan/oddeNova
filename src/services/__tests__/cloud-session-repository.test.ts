@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { hummingAttachment } from '../../lib/__tests__/fixtures/humming';
 import type { Session } from '../../hooks/useSessions';
 
 const authMocks = vi.hoisted(() => ({
@@ -95,6 +96,20 @@ describe('cloud-session-repository', () => {
 
     const { listCloudSessionSummaries } = await import('../cloud-session-repository');
     await expect(listCloudSessionSummaries({ expectedUserId: 'user-1' })).rejects.toBe(networkError);
+  });
+
+  it('sends safe melody metadata in a cloud checkpoint', async () => {
+    authMocks.getAccessToken.mockResolvedValue('token-123');
+    global.fetch = vi.fn().mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const { saveCloudSession } = await import('../cloud-session-repository');
+    const humming = hummingAttachment();
+    await saveCloudSession(makeSession({
+      messages: [{ id: 'user-1', role: 'user', content: '', timestamp: 1, humming }],
+    }), 'user-1');
+    const request = vi.mocked(fetch).mock.calls[0][1]!;
+    const payload = JSON.parse(request.body as string);
+    expect(payload.messages[0].humming).toEqual(humming);
+    expect(JSON.stringify(payload)).not.toContain('blob');
   });
 
   it('saves and deletes a complete session using the expected account token', async () => {

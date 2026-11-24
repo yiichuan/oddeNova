@@ -129,4 +129,35 @@ describe('ArchivedConversationView', () => {
     expect(table?.textContent).toContain('拍号');
     expect(table?.textContent).toContain('6/8');
   });
+  it('places the humming card immediately above the archived text bubble', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    const hummingMessages: ChatMessage[] = [{
+      id: 'humming-user',
+      role: 'user',
+      content: '短指令',
+      timestamp: 1,
+      humming: {
+        kind: 'humming', schemaVersion: 1,
+        id: '11111111-1111-4111-8111-111111111111',
+        recordingDurationSeconds: 8, trimStartSeconds: 0, melodyDurationSeconds: 7,
+        transcription: {
+          engine: 'basic-pitch', modelVersion: 'spotify-basic-pitch-ts@1.0.1',
+          preprocessingVersion: 'mono-sinc-22050-v1', notes: [], warnings: [],
+        },
+      },
+    }];
+
+    render(hummingMessages, container, root);
+
+    const bubble = container.querySelector<HTMLElement>('[data-favorites-turn="humming-user"] > div')!;
+    expect(bubble.className).toContain('max-w-[85%]');
+    const card = bubble.querySelector('[data-humming-audio-player]')!;
+    const textBubble = bubble.querySelector('.bg-message-user')!;
+    expect(textBubble.textContent).toBe('短指令');
+    expect(card.compareDocumentPosition(textBubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
 });

@@ -22,7 +22,8 @@ import { fileURLToPath } from 'node:url';
 }
 import { SINGLE_TURN_CASES } from './test-cases/single-turn.js';
 import { MULTI_TURN_CASES } from './test-cases/multi-turn.js';
-import { runAgentTurn, AGENT_SYSTEM_PROMPT, IMPROVISE_SYSTEM_PROMPT } from './agent-runner.js';
+import { runAgentTurn, AGENT_SYSTEM_PROMPT, IMPROVISE_SYSTEM_PROMPT, routerEvalCaller } from './agent-runner.js';
+import { evaluateRouter } from './router-eval.js';
 import { scoreRules, scoreLayerPreservation, judgeSingleTurn, judgeMultiTurn } from './evaluator.js';
 import type {
   SingleTurnCase, MultiTurnCase, CaseResult, TurnResult,
@@ -191,6 +192,10 @@ function generateReviewMarkdown(snapshot: EvalSnapshot): string {
 
 async function main() {
   const { label, only, cases, noJudge } = parseArgs();
+  if (only === 'router') {
+    process.exitCode = await evaluateRouter(routerEvalCaller, cases) ? 0 : 1;
+    return;
+  }
   console.log(`\n📊 Strudel 评测框架 — label: ${label}${noJudge ? ' (无 judge)' : ''}`);
 
   let singleCases = SINGLE_TURN_CASES;

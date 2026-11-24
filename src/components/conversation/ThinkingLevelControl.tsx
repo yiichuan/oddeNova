@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ChevronUpIcon } from '../icons';
 import { t, zh } from '../../lib/i18n';
 import {
@@ -124,6 +124,29 @@ export default function ThinkingLevelControl({
   const model = getSelectedModel(provider);
   const supportedLevels = getSupportedThinkingLevels(provider, model);
   const levelsKey = supportedLevels.join('|');
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const popover = popoverRef.current;
+    const composer = root?.closest('.chat-input-surface');
+    if (!open || !root || !popover || !composer) return;
+
+    const positionPopover = () => {
+      const inset = 8;
+      const bounds = composer.getBoundingClientRect();
+      if (bounds.width <= inset * 2) return;
+      popover.style.maxWidth = `${bounds.width - inset * 2}px`;
+      const triggerRight = root.getBoundingClientRect().right;
+      const right = Math.max(bounds.left + inset + popover.offsetWidth, Math.min(triggerRight, bounds.right - inset));
+      popover.style.right = `${triggerRight - right}px`;
+    };
+    positionPopover();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(positionPopover);
+    observer.observe(composer);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [open, levelsKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -311,7 +334,7 @@ export default function ThinkingLevelControl({
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-controls={POPOVER_ID}
-        className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] text-text-muted transition duration-200 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
+        className="inline-flex h-7 items-center gap-1 rounded-full text-[12px] text-text-muted transition duration-200 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
         title={t('thinkingLevel')}
         aria-label={t('thinkingLevel')}
       >

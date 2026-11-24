@@ -1,7 +1,7 @@
 import { analyticsContext, analyticsMessageTurn, setAnalyticsWorkspace } from './lib/analytics-context';
 import { emitTelemetry } from './lib/telemetry';
 import { ownImage, type ImageAttachment } from './lib/image-attachments';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { DRAFT_SEGMENT_ID, codeBeforeMessage } from './lib/draft-diff';
@@ -28,7 +28,7 @@ import { generateConversationTitle } from './services/conversation-title';
 import { parseStepwiseChoice } from './services/suggestions';
 import type { ConversationTurn } from './services/llm-loader';
 import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
-import { createAgentProgressHandler } from './lib/agent-progress-handler';
+import { createBatchedAgentProgressHandler } from './lib/agent-progress-handler';
 import { isDemoMode, getActiveDemoSet, getDemoMoodInstruction } from './demo/demo-config';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm-loader';
@@ -41,6 +41,7 @@ import { useOddeNovaImport } from './hooks/useOddeNovaImport';
 import { useOddeNovaBridge, type OddeNovaBridgePresentationReason } from './hooks/useOddeNovaBridge';
 import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
+import { useHummingInput } from './hooks/useHummingInput';
 import { useVideoDemo } from './hooks/useVideoDemo';
 import { useLayout, VIZ_DIVIDER_HEIGHT } from './hooks/useLayout';
 import ConversationView from './components/conversation/ConversationView';
@@ -59,10 +60,12 @@ import { hasSeenWelcome, markWelcomeSeen, shouldAutoOpenWelcomeModal } from './l
 import type { AgentEntryPoint } from './lib/analytics';
 import type { ChatEntryPoint } from './hooks/useChat';
 import { useAccountActivity } from './hooks/useAccountActivity';
+import type { HummingAttachment } from './types/humming';
 import { conversationTitle, type FavoriteConversation } from './lib/favorite-conversations';
 import { sessionAsFavorite } from './lib/session-favorites';
 import { fullSessionTitle } from './lib/full-session-title';
 import { deriveSessionTitle } from './lib/session-title';
+import { withSessionTurnLock } from './lib/session-turn-lock';
 import { useVisualViewport } from './hooks/useVisualViewport';
 import { useBrowserChromeColor } from './hooks/useBrowserChromeColor';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
@@ -403,7 +406,7 @@ export default function App() {
     handleChatFocusChange,
     handleCodeFocusChange,
   } = useLayout();
-  useEffect(() => {
+  useLayoutEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
 
@@ -1112,7 +1115,7 @@ export default function App() {
   // Build the agent progress→UI handler for a given session. Shared verbatim by
   // handleInstruction and handleMoodInstruction.
   const makeAgentProgressHandler = useCallback(
-    (sessionId: string) => createAgentProgressHandler(sessions, sessionId),
+    (sessionId: string, canPublish?: () => boolean) => createBatchedAgentProgressHandler(sessions, sessionId, canPublish),
     [sessions]
   );
 
@@ -1123,6 +1126,8 @@ export default function App() {
     strudel,
     sessions,
     currentCode,
+    getLiveEditorCode: () => strudelRef.current.getDisplayedCode?.()
+      ?? (strudelRef.current.code || sessions.currentSession?.code || ''),
     abortControllersRef,
     currentIdRef,
     setLoadingSessions,
@@ -1190,9 +1195,12 @@ export default function App() {
       entryPoint?: AgentEntryPoint;
       selectedChoice?: true;
       skipAddMessage?: boolean;
+      messageId?: string;
+      initialRevisionId?: string;
       initialCode?: string;
       history?: ConversationTurn[];
       images?: ImageAttachment[];
+      humming?: HummingAttachment;
     }) => {
       if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
         setDemoStep((s) => s + 1);
@@ -1237,6 +1245,8 @@ export default function App() {
         selectedChoice: options?.selectedChoice,
         includeHistory: true,
         skipAddMessage: options?.skipAddMessage,
+        messageId: options?.messageId,
+        initialRevisionId: options?.initialRevisionId,
         initialCode: options?.initialCode,
         suppliedHistory: history?.map(turn => ({ ...turn, images: turn.images?.map(image => replacements.get(image.id) ?? image) })),
         onFirstUserMessage: shouldGenerateTitle && sessionId
@@ -1252,6 +1262,7 @@ export default function App() {
               );
             }
           : undefined,
+        humming: options?.humming,
       });
     },
     [
@@ -1302,22 +1313,57 @@ export default function App() {
   // Both composer layouts can submit to the same session while image preparation is pending.
   const pendingComposerSendsRef = useRef(new Set<string>());
   const handleChatInstruction = useCallback(
-    async (text: string, entryPoint: ChatEntryPoint, images?: ImageAttachment[]) => {
+    async (text: string, entryPoint: ChatEntryPoint, images?: ImageAttachment[], humming?: HummingAttachment) => {
       const scope = imageScopeRef.current;
       const pending = pendingComposerSendsRef.current;
       if (pending.has(scope)) throw new Error(t('chatSendInProgress'));
       pending.add(scope);
       try {
         noteRealInstructionRef.current();
-        await handleInstruction(text, entryPoint === 'choice'
-          ? { entryPoint: 'suggestion', selectedChoice: true }
-          : { entryPoint, images });
+        await withSessionTurnLock(ownerKey, sessions.currentSession, readCachedDetail, async () => {
+          if (scope !== imageScopeRef.current) throw new Error('会话已切换，请重新发送');
+          await handleInstruction(text, entryPoint === 'choice'
+            ? { entryPoint: 'suggestion', selectedChoice: true }
+            : { entryPoint, images, humming });
+        });
       } finally {
         pending.delete(scope);
       }
     },
-    [handleInstruction],
+    [handleInstruction, ownerKey, sessions.currentSession, readCachedDetail],
   );
+  const hummingInput = useHummingInput({
+    ownerKey,
+    sessionId: sessions.currentId,
+    busy: isLoading || isReplaying || isVideoMode || isDemoMode(),
+    pauseTransport: strudel.pause,
+    onSend: (text, entryPoint, attachment) => handleChatInstruction(text, entryPoint, undefined, attachment),
+  });
+  const {
+    stopRecording: stopHummingRecording,
+    cancelTranscription: cancelHummingTranscription,
+    restoreAttachment: restoreHummingAttachment,
+    discard: discardHummingDraft,
+  } = hummingInput;
+  useEffect(() => {
+    if (
+      primaryNavItem !== 'home'
+      || sidebarCollapsed
+      || isVideoMode
+      || isReplaying
+      || isDemoMode()
+    ) {
+      stopHummingRecording();
+      cancelHummingTranscription();
+    }
+  }, [
+    cancelHummingTranscription,
+    stopHummingRecording,
+    isReplaying,
+    isVideoMode,
+    primaryNavItem,
+    sidebarCollapsed,
+  ]);
 
   // Abort any in-progress run and rewind strudel/session code state to before messageId was sent.
   // Shared by handleResend (edit + resend) and handleRollback (rewind only);
@@ -1363,28 +1409,38 @@ export default function App() {
 
   const handleResend = useCallback(
     async (messageId: string, newContent: string, action: 'retry' | 'edit_resend' = 'edit_resend', sourceTurn?: string) => {
-      const context = analyticsContext();
-      const allMessages = sessions.currentSession?.messages ?? [];
-      const targetIndex = allMessages.findIndex(message => message.id === messageId);
-      const followingReply = targetIndex < 0 ? undefined : allMessages[targetIndex + 1];
-      context.turn_id = sourceTurn ?? (followingReply ? analyticsMessageTurn(sessions.currentId, followingReply.id) : undefined);
-      const allMsgs = sessions.currentSession?.messages ?? [];
-      const history = conversationHistoryBefore(allMsgs, messageId);
+      const scope = imageScopeRef.current;
+      try {
+        await withSessionTurnLock(ownerKey, sessions.currentSession, readCachedDetail, async () => {
+          if (scope !== imageScopeRef.current) return;
+          const context = analyticsContext();
+          const allMessages = sessions.currentSession?.messages ?? [];
+          const targetIndex = allMessages.findIndex(message => message.id === messageId);
+          const followingReply = targetIndex < 0 ? undefined : allMessages[targetIndex + 1];
+          context.turn_id = sourceTurn ?? (followingReply ? analyticsMessageTurn(sessions.currentId, followingReply.id) : undefined);
+          const history = conversationHistoryBefore(allMessages, messageId);
 
-      const rewound = rewindBeforeMessage(messageId);
-      emitTelemetry('creation_action', { action, outcome: rewound ? 'success' : 'invalid_target' }, context);
-      if (!rewound) return;
+          const rewound = rewindBeforeMessage(messageId);
+          emitTelemetry('creation_action', { action, outcome: rewound ? 'success' : 'invalid_target' }, context);
+          if (!rewound) return;
 
-      sessions.truncateAndEdit(messageId, newContent);
-      await handleInstruction(newContent, {
-        images: allMsgs.find(message => message.id === messageId)?.images,
-        entryPoint: 'retry',
-        skipAddMessage: true,
-        initialCode: rewound.previousCode,
-        history,
-      });
+          sessions.truncateAndEdit(messageId, newContent);
+          await handleInstruction(newContent, {
+            images: rewound.target.images,
+            entryPoint: 'retry',
+            skipAddMessage: true,
+            messageId,
+            initialRevisionId: allMessages.slice(0, targetIndex).findLast(message => message.revisionId)?.revisionId,
+            initialCode: rewound.previousCode,
+            history,
+            humming: rewound.target.humming,
+          });
+        });
+      } catch (error) {
+        if (scope === imageScopeRef.current) strudelRef.current.setError(error instanceof Error ? error.message : t('agentResponseFailed'));
+      }
     },
-    [sessions, handleInstruction, rewindBeforeMessage]
+    [sessions, handleInstruction, rewindBeforeMessage, ownerKey, readCachedDetail]
   );
 
   const handleRollback = useCallback(
@@ -1400,6 +1456,9 @@ export default function App() {
       if (!rewound) return;
 
       sessions.truncate(messageId);
+      if (rewound.target.humming) {
+        void restoreHummingAttachment(rewound.target.humming);
+      }
 
       // Hand the instruction back to the input in the same commit as the
       // truncation. This used to sit behind the checkpoint below, which is a
@@ -1417,7 +1476,7 @@ export default function App() {
         void sessions.checkpointSession(currentSessionId);
       }
     },
-    [sessions, rewindBeforeMessage]
+    [restoreHummingAttachment, sessions, rewindBeforeMessage]
   );
 
   const handleRetry = useCallback(
@@ -2149,8 +2208,9 @@ export default function App() {
      action runs. See mobileNavigationRef. */
   const handleDeleteSession = useCallback((id: string) => {
     if (isMobile) ++mobileNavigationRef.current;
+    if (sessions.currentId === id) discardHummingDraft();
     deleteSessionAction(id);
-  }, [deleteSessionAction, isMobile]);
+  }, [deleteSessionAction, discardHummingDraft, isMobile, sessions.currentId]);
 
 
   const handleOpenFavoriteInStudio = useCallback((code: string) => {
@@ -2353,6 +2413,7 @@ export default function App() {
   const favoritesPage = favoritesVisited ? (
     <FeatureLoadBoundary fallback={<LazyOverlayFallback />}>
       <LazyFavoritesPage
+        ownerKey={ownerKey}
         // Hidden rather than unmounted when you leave, so the page has
         // to be told when it is the one being looked at.
         active={primaryNavItem === 'favorites'}
@@ -2540,7 +2601,12 @@ export default function App() {
           <div className="flex-1 min-h-0 overflow-hidden mb-5">
             <ConversationView
               key={sessions.currentId ?? 'default'}
+              ownerKey={ownerKey}
               messages={messages}
+              liveRouterProgress={sessions.liveRouterProgress}
+              pendingHumming={hummingInput.pendingSubmission}
+              hummingWaveformToolCalled={hummingInput.waveformToolCalled}
+              onCancelHumming={cancelHummingTranscription}
               revisions={sessions.currentSession?.revisions}
               isLoading={isLoading}
               onRollback={handleRollback}
@@ -2594,12 +2660,14 @@ export default function App() {
                 than with Tab, so no separate chip row. */}
             <ChatInput
               key={`${auth.user?.id ?? "guest"}:${current?.id ?? "new"}`}
+              recordingScope={`${ownerKey}:${sessions.currentId ?? ''}`}
               presetLock={onboardingPresetLock}
               guided={creationGuiding}
               isLoading={isLoading}
               engineReady={strudel.engineReady}
               engineStatus={strudel.engineStatus}
               onSendText={handleChatInstruction}
+              humming={!isDemoMode() && !isVideoMode && !isReplaying ? hummingInput : undefined}
               onStop={handleStop}
               onReinitEngine={strudel.reinit}
               prefill={rollbackImageDraft && rollbackImageDraft.scope !== imageScopeRef.current ? '' : rollbackPrefill}
@@ -2941,8 +3009,10 @@ export default function App() {
           <div className={primaryNavItem === 'home' ? 'h-full' : 'hidden'}>
             <Sidebar
               key={auth.user?.id ?? "guest"}
+              ownerKey={ownerKey}
               title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
               messages={videoDemoMsgs ?? messages}
+              liveRouterProgress={sessions.liveRouterProgress}
               revisions={current?.revisions}
               isLoading={isLoading || isReplaying}
               engineReady={strudel.engineReady}
@@ -2955,6 +3025,7 @@ export default function App() {
               isVideoMode={isVideoMode}
               scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
               onSendText={handleChatInstruction}
+              humming={!isDemoMode() && !isVideoMode && !isReplaying ? hummingInput : undefined}
               onStop={handleStop}
               onNewSession={handleNewSession}
               onMoodGenerate={handleMoodInstruction}

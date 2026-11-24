@@ -1,3 +1,5 @@
+import type { AgentTraceSink } from '../lib/agent-trace';
+import type { HummingAttachment } from '../types/humming';
 import type { ImageAttachment } from '../lib/image-attachments';
 // ===========================================================================
 // Lazy entry point for the heavy LLM runtime (services/llm.ts).
@@ -66,6 +68,8 @@ export async function runAgent(
   signal?: AbortSignal,
   conversationHistory?: ConversationTurn[],
   images?: ImageAttachment[],
+  humming?: HummingAttachment,
+  trace?: AgentTraceSink,
 ): Promise<RunAgentResult> {
   const module = await loadRuntime();
   // The import itself cannot be aborted; make sure a request cancelled while
@@ -73,9 +77,20 @@ export async function runAgent(
   if (signal?.aborted) {
     throw new DOMException('Aborted', 'AbortError');
   }
-  return images?.length
+  if (trace) return module.runAgent(instruction, currentCode, onProgress, moodContext, signal, conversationHistory, images, humming, trace);
+  return humming
+    ? module.runAgent(instruction, currentCode, onProgress, moodContext, signal, conversationHistory, images, humming)
+    : images?.length
     ? module.runAgent(instruction, currentCode, onProgress, moodContext, signal, conversationHistory, images)
     : module.runAgent(instruction, currentCode, onProgress, moodContext, signal, conversationHistory);
+}
+
+export async function runConversationTurn(
+  request: Parameters<Runtime['runConversationTurn']>[0],
+): ReturnType<Runtime['runConversationTurn']> {
+  const module = await loadRuntime();
+  request.signal.throwIfAborted();
+  return module.runConversationTurn(request);
 }
 
 export async function chatOnce(
@@ -100,6 +115,7 @@ export async function classifyIntent(
 type RuntimeSurface = Runtime;
 type LoaderSurface = {
   runAgent: typeof runAgent;
+  runConversationTurn: typeof runConversationTurn;
   chatOnce: typeof chatOnce;
   resetClient: typeof resetClient;
   classifyIntent: typeof classifyIntent;

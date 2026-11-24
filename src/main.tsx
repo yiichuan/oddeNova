@@ -1,5 +1,5 @@
 import './index.css'
-import { isLearnPath } from './lib/routes';
+import { isAgentWorkflowPath, isLoopbackHost, isLearnPath, isLocalToolsPath, isPromptComparePath, isSampleLibraryPath } from './lib/routes';
 import { loadEditorPreferences } from './lib/editor-preferences';
 import { loadAppearancePreferences } from './lib/appearance-preferences';
 import { initPersonaCache } from './lib/persona-storage';
@@ -17,10 +17,33 @@ import { mountEntryRoot, entryLoadingView, entryErrorView } from './lib/entry-vi
 loadAppearancePreferences()
 loadEditorPreferences()
 consumeOddeNovaBridgeBootstrapHash()
-initializeAnalytics(zh ? 'zh-CN' : 'en')
-installAppErrorTelemetry()
+const localAgentWorkflow = import.meta.env.DEV && isAgentWorkflowPath() && isLoopbackHost(window.location.hostname);
+if (!localAgentWorkflow) {
+  initializeAnalytics(zh ? 'zh-CN' : 'en');
+  installAppErrorTelemetry();
+}
 
-if (isLearnPath()) {
+if (localAgentWorkflow) {
+  const root = mountEntryRoot();
+  root.render(entryLoadingView());
+  void Promise.all([
+    import('./local-tools/AgentWorkflowPage'),
+    initPersonaCache().catch(() => undefined),
+  ]).then(([module]) => root.render(<module.default />))
+    .catch(error => root.render(entryErrorView(error)));
+} else if (import.meta.env.DEV && (isLocalToolsPath() || isPromptComparePath())) {
+  const root = mountEntryRoot();
+  root.render(entryLoadingView());
+  void import('./local-tools/LocalToolsPage')
+    .then(module => root.render(<module.default />))
+    .catch(error => root.render(entryErrorView(error)));
+} else if (import.meta.env.DEV && isSampleLibraryPath()) {
+  const root = mountEntryRoot();
+  root.render(entryLoadingView());
+  void import('./sample-library/SampleLibraryPage')
+    .then(module => root.render(<module.default />))
+    .catch(error => root.render(entryErrorView(error)));
+} else if (isLearnPath()) {
   // Standalone docs page — skip audio/session bootstrap entirely.
   const root = mountEntryRoot();
   void import('./learn/LearnPage')

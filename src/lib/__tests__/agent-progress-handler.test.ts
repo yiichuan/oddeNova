@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAgentProgressHandler } from '../agent-progress-handler';
+import { t, zh } from '../i18n';
 
 function makeSessions() {
   return {
@@ -14,6 +15,30 @@ function makeSessions() {
 }
 
 describe('createAgentProgressHandler', () => {
+  it('shows readable summaries for batched and legacy searches without exposing raw parameters', () => {
+    const sessions = makeSessions();
+    const handle = createAgentProgressHandler(sessions, 'S1');
+    const kick = { query: ' Short kick ', category: 'kick', features: { attack: 'sharp', unknown: 'ignored' } };
+    const expectedKick = { query: 'Short kick', labels: ['kick', zh ? '起音锐利' : 'Sharp attack'] };
+
+    handle({ kind: 'tool_call', name: 'searchSamples', args: {
+      queries: [{ ...kick, id: 'kick' }, { id: 'snare', query: 'Dry snare' }, { query: ' ' }],
+    } });
+    handle({ kind: 'tool_call', name: 'searchSamples', args: kick });
+    handle({ kind: 'tool_call', name: 'searchSamples', args: {} });
+    handle({ kind: 'tool_call', name: 'unknownTool', args: { internal: 'hidden' } });
+
+    const options = { toolName: 'searchSamples', sessionId: 'S1' };
+    expect(sessions.addProgress.mock.calls).toEqual([
+      ['tool_call', t('searchingSamples'), {
+        ...options, sampleSearchSummary: [expectedKick, { query: 'Dry snare', labels: [] }],
+      }],
+      ['tool_call', t('searchingSamples'), { ...options, sampleSearchSummary: [expectedKick] }],
+      ['tool_call', t('searchingSamples'), options],
+      ['tool_call', t('runningTool'), { toolName: 'unknownTool', sessionId: 'S1' }],
+    ]);
+  });
+
   it('routes streamed chat replies directly into the assistant message', () => {
     const sessions = makeSessions();
     const handle = createAgentProgressHandler(sessions, 'S1');

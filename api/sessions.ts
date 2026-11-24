@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isSafeChatMessageTransfer } from '../src/lib/humming-transfer.js';
 import {
   getStringQuery,
   isUuid,
@@ -298,6 +299,9 @@ async function upsertSession(req: VercelRequest, res: VercelResponse, id: string
     const session = req.body as ApiSession;
     if (!session || session.id !== id || !session.title || !Array.isArray(session.messages)) {
       return void res.status(400).json({ error: 'Invalid session payload' });
+    }
+    if (!session.messages.every(isSafeChatMessageTransfer)) {
+      return void res.status(400).json({ error: 'Invalid session messages or device-local audio data included' });
     }
 
     const { error } = await auth.supabase

@@ -3,8 +3,13 @@
 // and a handler that operates on a mutable AgentState. The `commit` tool is
 // terminal — it throws CommitSignal which the loop catches.
 
+import { FEATURE_OPTIONS } from '../lib/sample-search';
+import { parseSampleSearchInput, DEFAULT_SAMPLE_LIMIT, type SampleBatchQuery, type SampleSearchResult } from '../lib/sample-search-batch';
+import type { SessionProgress } from './progress';
 import { parseScore } from './parser';
 import { validateCodeRuntime, validateCodeTranspiler, normalizeCode } from '../services/strudel';
+import { buildHummingTurnReport, hasHummingWaveformReport } from '../lib/humming-context';
+import type { HummingAttachment } from '../types/humming';
 import { normalizeGmSampleNames } from '../lib/sample-allowlist';
 
 export interface AgentState {
@@ -14,7 +19,11 @@ export interface AgentState {
 
 export interface ToolContext {
   state: AgentState;
+  reportSession?: (entry: SessionProgress) => void;
+  validateScope?: (candidate: string) => boolean;
   isZh?: boolean;
+  humming?: HummingAttachment;
+  sampleSearch?: (input: SampleBatchQuery) => Promise<SampleSearchResult[]>;
 }
 
 export interface ToolResult {
@@ -128,9 +137,97 @@ export async function validateCommittedCode(code: string, isZh = true): Promise<
   return validateCurrentCode(code, isZh);
 }
 
+function sampleSearchParameters(isZh: boolean) {
+  return {
+    type: 'object', additionalProperties: false, required: ['queries'],
+    properties: {
+      queries: {
+        type: 'array', minItems: 1,
+        description: isZh
+          ? `已确定的声部需求可合并搜索；每组默认期望${DEFAULT_SAMPLE_LIMIT}个候选，不设组数、候选数或整批预算的硬上限。支持单组及后续补查。`
+          : `Batch known role requirements, targeting ${DEFAULT_SAMPLE_LIMIT} candidates per query by default. No hard caps on queries, candidates or total budget. A single query and follow-up searches are supported.`,
+        items: {
+          type: 'object', additionalProperties: false, required: ['id', 'query'],
+          properties: {
+            id: { type: 'string', minLength: 1, maxLength: 100, description: isZh ? '本批唯一的需求标识，结果按此 id 分组。' : 'Unique query id within this batch; results use this id.' },
+            query: { type: 'string', minLength: 1, maxLength: 500, description: isZh ? '该声部的听感需求，例如短尾干声军鼓。' : 'Audible needs for this role, e.g. a dry snare with a short tail.' },
+            category: { type: 'string', maxLength: 100, description: isZh ? '可选乐器类别，例如军鼓 snare、钢琴 piano。' : 'Optional instrument category, e.g. snare or piano.' },
+            features: {
+              type: 'object', additionalProperties: false,
+              description: isZh ? '该需求的可选结构化听感条件。' : 'Optional structured listening preferences for this query.',
+              properties: Object.fromEntries(Object.entries(FEATURE_OPTIONS).map(([key, values]) => [
+                key, key === 'texture_tags' ? { type: 'array', items: { type: 'string', enum: values } } : { type: 'string', enum: values },
+              ])),
+            },
+            limit: { type: 'integer', minimum: 1, description: isZh ? '期望候选数量，默认3；实际按相关性返回，不设硬上限。' : 'Target candidate count, default 3; actual count follows relevance without a hard cap.' },
+          },
+        },
+      },
+    },
+  };
+}
+
 // ----- tool definitions ------------------------------------------------------
 
 export const TOOLS: ToolDef[] = [
+  {
+    name: 'reportArrangement',
+    description: 'Report an actual next step or a concise summary of musical decisions to Router.',
+    parameters: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        plan: { type: 'string', description: 'What you are about to do.' },
+        strategy: { type: 'string', description: 'Chosen instrumentation, tonality, form or structural trade-offs. Summarize decisions and reasons.' },
+      },
+    },
+    handler: (args, ctx) => {
+      if (!ctx.reportSession) return { ok: false, error: 'Progress reporting is unavailable.' };
+      const plan = typeof args.plan === 'string' ? args.plan.trim().slice(0, 900) : '';
+      const strategy = typeof args.strategy === 'string' ? args.strategy.trim().slice(0, 1800) : '';
+      if (!plan && !strategy) return { ok: false, error: 'Provide a plan or musical decision summary.' };
+      if (plan) ctx.reportSession({ kind: 'plan', facts: { nextStep: plan } });
+      if (strategy) ctx.reportSession({ kind: 'strategy', facts: { musicalDecisions: strategy } });
+      return { ok: true };
+    },
+  },
+  {
+    name: 'searchSamples',
+    description: '按声部类别和听感批量查找内置采样，一次检索多组已确定需求，结果按 id 分组。新增或替换已标注库音色前使用；同需求结果可复用，需后续判断的需求可补查。目录类别优先；听感是软参考。',
+    parameters: sampleSearchParameters(true),
+    handler: async (args, ctx) => {
+      const zh = ctx.isZh ?? true;
+      let input: ReturnType<typeof parseSampleSearchInput>;
+      try {
+        input = parseSampleSearchInput(args);
+      } catch {
+        return { ok: false, error: zh
+          ? '无效的采样查询：queries 需为非空数组且 id 唯一，limit 需为正整数；请检查听感条件。'
+          : 'Invalid sample queries: provide a nonempty queries array with unique ids, positive integer target limits, and valid listening features.' };
+      }
+      if (!ctx.sampleSearch) {
+        return { ok: false, error: zh ? '当前会话未启用音色检索。' : 'Sample search is unavailable in this session.' };
+      }
+      try {
+        const results = await ctx.sampleSearch({ queries: input.queries });
+        const withNotices = results.map(result => result.ok ? {
+          ...result, notice: result.candidates.length ? undefined : zh
+            ? '没有匹配候选，可调整此组条件或使用现有采样目录。'
+            : 'No matches; adjust this query or use the existing sample reference.',
+        } : result);
+        // Historical calls/replays keep their single-query result shape.
+        if (input.legacy) {
+          const result = withNotices[0];
+          return result.ok
+            ? { ok: true, data: { candidates: result.candidates, notice: result.notice } }
+            : { ok: false, error: result.error };
+        }
+        return { ok: true, data: { results: withNotices } };
+      } catch {
+        return { ok: false, error: zh ? '音色检索暂不可用，可调整需求或使用现有采样目录继续创作。' : 'Sample search unavailable; adjust the request or continue with the existing sample reference.' };
+      }
+    },
+  },
+
   {
     name: 'validate',
     description:
@@ -190,7 +287,10 @@ export const TOOLS: ToolDef[] = [
       // Rewrite MIDI-standard GM names (e.g. gm_acoustic_grand_piano) to strudel's
       // canonical names (gm_piano) so the stored/validated/committed code stays
       // portable to vanilla strudel — oddeNova's runtime aliases are only a fallback.
-      const code = normalizeGmSampleNames(args.code.trim());
+      const code = normalizeGmSampleNames(ctx.validateScope ? args.code : args.code.trim());
+      if (ctx.validateScope && !ctx.validateScope(code)) return {
+        ok: false, error: 'Candidate exceeds the authorized edit scope. Preserve the baseline outside the assigned targets.',
+      };
       const score = parseScore(code);
       ctx.state.code = code;
       return {
@@ -200,6 +300,18 @@ export const TOOLS: ToolDef[] = [
           bpm: score.bpm,
         },
       };
+    },
+  },
+
+  {
+    name: 'analyzeHummingWaveform',
+    description: 'Read the waveform analysis and available style reference for each humming take attached to the current turn.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    handler: (_args, ctx) => {
+      if (!hasHummingWaveformReport(ctx.humming)) {
+        return { ok: false, error: ctx.isZh ? '当前消息没有可分析的哼唱录音' : 'This turn has no analyzed humming recording' };
+      }
+      return { ok: true, data: buildHummingTurnReport(ctx.humming) };
     },
   },
 
@@ -236,7 +348,11 @@ export const TOOLS: ToolDef[] = [
       // Always use the tool-managed state.code — never let the LLM pass its own
       // code blob, which would bypass setcps and other accumulated edits.
       // Normalize multiline strings so Strudel's evaluator doesn't choke.
-      throw new CommitSignal(normalizeCode(ctx.state.code));
+      const normalized = normalizeCode(ctx.state.code);
+      if (ctx.validateScope && !ctx.validateScope(normalized)) return {
+        ok: false, error: 'Final code exceeds the authorized edit scope.',
+      };
+      throw new CommitSignal(normalized);
     },
   },
 ];
@@ -244,6 +360,7 @@ export const TOOLS: ToolDef[] = [
 // Bilingual schema descriptions — kept separate from handler logic so the
 // schema sent to the LLM is always in the user's language.
 const TOOL_SCHEMAS_ZH = {
+  searchSamples: { description: "新增或替换已标注库音色前，批量检索已确定的声部和听感需求，按 id 返回每组候选、合法播放方式及标注。目录类别优先，模型初标是软参考。同需求结果可复用，支持单组与补查。", params: {} },
   validate: {
     description:
       '对一段 strudel 代码做校验（不会播放）：先做 JS 语法检查，再在沙箱里 dry-run 一次以捕捉未定义函数（如 by/sometimesBy 等幻觉 API）和类型错误。在 commit 前应该至少 validate 一次最终代码；若失败请按错误信息修代码后再 validate 一次。',
@@ -259,6 +376,10 @@ const TOOL_SCHEMAS_ZH = {
       explanation: '【必填】用你的人格口吻、一句话现在进行时说明这一步 setCode 在做什么，会作为进度消息展示给用户。如 "加上完整 mask 编排，intro→drop 结构" / "给 bass 加一层低通滤波"。',
     },
   },
+  analyzeHummingWaveform: {
+    description: '按录制顺序读取当前消息每段哼唱的时间轴、音高、时长、休止、音量、音高轮廓与可用的风格参考。速度与拍号仅在线索充足时提供估计。',
+    params: {},
+  },
   commit: {
     description:
       '终止本次 agent 循环，把最终代码交给播放器 hot-reload 播放。必须在所有编辑完成且 validate 通过后调用。一次会话内只能调用一次。',
@@ -271,6 +392,7 @@ const TOOL_SCHEMAS_ZH = {
 };
 
 const TOOL_SCHEMAS_EN = {
+  searchSamples: { description: "Before adding or replacing annotated timbres, batch known role and listening requirements. Returns candidates, legal playback and annotations grouped by id. Catalog identity takes precedence; model observations are soft guidance. Reuse unchanged results; single-query and follow-up searches are supported.", params: {} },
   validate: {
     description:
       'Validate a snippet of Strudel code (no playback): runs a JS syntax check then dry-runs in a sandbox to catch undefined functions (e.g. hallucinated APIs like by/sometimesBy) and type errors. Call validate at least once before commit; if it fails, fix the code per the error message and validate again.',
@@ -286,6 +408,10 @@ const TOOL_SCHEMAS_EN = {
       explanation: '[Required] In your persona voice, one present-tense sentence describing what this setCode step is doing; shown to the user as a progress message. E.g. "Adding the full mask arrangement, intro→drop structure" / "Adding a low-pass filter to the bass".',
     },
   },
+  analyzeHummingWaveform: {
+    description: 'Read estimated pitches, recording-relative timing, rests, dynamics, pitch contours, and available style references for the attached takes in recording order. Tempo and meter estimates are supplied when supported.',
+    params: {},
+  },
   commit: {
     description:
       'Terminate the agent loop and hand the final code to the player for hot-reload playback. Must be called after all edits are complete and validate has passed. Can only be called once per session.',
@@ -298,21 +424,27 @@ const TOOL_SCHEMAS_EN = {
 };
 
 // OpenAI ChatCompletion `tools` array.
-export function getOpenAIToolSchemas(isZh = true): Array<{
+export function getOpenAIToolSchemas(isZh = true, hasHummingWaveform = false, delegatedExecution = false): Array<{
   type: 'function';
   function: { name: string; description: string; parameters: Record<string, unknown> };
 }> {
   const schemas = isZh ? TOOL_SCHEMAS_ZH : TOOL_SCHEMAS_EN;
-  return TOOLS.map((t) => {
+  return TOOLS.filter(tool => (hasHummingWaveform || tool.name !== 'analyzeHummingWaveform')
+    && (delegatedExecution || tool.name !== 'reportArrangement')).map((t) => {
+    if (t.name === 'reportArrangement') return { type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } };
     const s = schemas[t.name as keyof typeof schemas];
+    const baseParameters = t.name === 'searchSamples' ? sampleSearchParameters(isZh) : t.parameters;
     // Merge bilingual param descriptions into a copy of the original parameters schema.
+    const properties = (baseParameters as { properties: Record<string, { type: string; description?: string }> }).properties;
     const parameters = {
-      ...t.parameters,
-      properties: Object.fromEntries(
-        Object.entries((t.parameters as { properties: Record<string, { type: string; description?: string }> }).properties).map(
-          ([key, val]) => [key, { ...val, description: s.params[key as keyof typeof s.params] ?? val.description }]
-        )
-      ),
+      ...baseParameters,
+      properties: Object.fromEntries(Object.entries(properties).map(([key, val]) => {
+        const internal = delegatedExecution && key === 'explanation' && (t.name === 'setCode' || t.name === 'commit');
+        const description = internal
+          ? isZh ? '简要记录实际实施细节，供 Router 核对。' : 'Brief factual implementation notes for Router.'
+          : s.params[key as keyof typeof s.params] ?? val.description;
+        return [key, { ...val, description }];
+      })),
     };
     return {
       type: 'function',

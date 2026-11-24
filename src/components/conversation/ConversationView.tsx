@@ -1,5 +1,8 @@
+import RouterProgressView, { ActionProcessHeader, RouterProcessView } from './RouterProgressView';
+import { groupRouterProcess, routerStageLabels, routerStrategySeconds } from './router-progress-display';
+import type { LiveRouterProgress } from '../../agent/progress';
 import MessageImages from './MessageImages';
-import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
+import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -12,6 +15,7 @@ import { t, zh } from '../../lib/i18n';
 import { DRAFT_SEGMENT_ID, draftBaseCode } from '../../lib/draft-diff';
 import { CodeDiffView } from './CodeDiffView';
 import { parseStepwiseChoice, stepwiseOptionText } from '../../services/suggestions';
+import { SampleSearchSummary } from './SampleSearchSummary';
 
 // The lottie player and its JSON stay out of first paint: declared at module
 // scope (never inside render) and mounted only where the thinking indicator
@@ -32,6 +36,12 @@ function ThinkingLottieSuspense({ className }: { className?: string }) {
     </Suspense>
   );
 }
+import HummingAudioPlayer from './HummingAudioPlayer';
+import { getHummingAsset } from '../../lib/humming-storage';
+import { hummingTakes } from '../../lib/humming-transfer';
+import { buildHummingWaveformReport } from '../../lib/humming-context';
+import type { PendingHummingSubmission } from '../../hooks/useHummingInput';
+import type { HummingAttachment } from '../../types/humming';
 
 type MobileNoSelectStyle = CSSProperties & {
   WebkitTouchCallout?: 'none';
@@ -274,11 +284,122 @@ export const MarkdownText = memo(function MarkdownText({ content, tone = 'defaul
   );
 });
 
+function MessageHummingTake({ humming, ownerKey, label }: {
+  humming: HummingAttachment;
+  ownerKey?: string;
+  label: string;
+}) {
+  const [audioAsset, setAudioAsset] = useState<{
+    key: string;
+    url: string | null;
+    unavailable: boolean;
+    loading: boolean;
+  } | null>(null);
+  const hummingId = humming.id;
+  const audioAssetKey = hummingId && ownerKey ? `${ownerKey}:${hummingId}` : null;
+
+  useEffect(() => {
+    let active = true;
+    let createdUrl: string | null = null;
+    if (!hummingId || !ownerKey) return () => { active = false; };
+
+    void getHummingAsset(ownerKey, hummingId).then((asset) => {
+      if (!active) return;
+      if (!asset) {
+        setAudioAsset({ key: `${ownerKey}:${hummingId}`, url: null, unavailable: true, loading: false });
+        return;
+      }
+      createdUrl = URL.createObjectURL(asset.blob);
+      setAudioAsset({ key: `${ownerKey}:${hummingId}`, url: createdUrl, unavailable: false, loading: false });
+    }).catch(() => {
+      if (active) {
+        setAudioAsset({ key: `${ownerKey}:${hummingId}`, url: null, unavailable: true, loading: false });
+      }
+    });
+
+    return () => {
+      active = false;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [hummingId, ownerKey]);
+  const currentAudioAsset = audioAsset?.key === audioAssetKey ? audioAsset : null;
+  return (
+    <div className="min-w-0">
+      <HummingAudioPlayer
+        compact
+        src={currentAudioAsset?.url}
+        durationSeconds={humming.recordingDurationSeconds}
+        label={label}
+        loading={Boolean(ownerKey && (!currentAudioAsset || currentAudioAsset.loading))}
+        disabled={!ownerKey || Boolean(currentAudioAsset?.unavailable)}
+      />
+      {(!ownerKey || currentAudioAsset?.unavailable) && (
+        <p className="mt-1 text-[11px] text-text-muted">{t('hummingAudioUnavailable')}</p>
+      )}
+    </div>
+  );
+}
+
+export function MessageHummingCards({ humming, pending, ownerKey }: {
+  humming?: HummingAttachment;
+  pending?: PendingHummingSubmission;
+  ownerKey?: string;
+}) {
+  const takes = hummingTakes(humming);
+  if (!takes.length && !pending) return null;
+  const label = (index: number) => `${zh ? '哼唱' : 'Humming'} ${String(index + 1).padStart(2, '0')}`;
+  return (
+    <div className="flex max-w-full flex-wrap justify-end gap-2">
+      {pending ? pending.takes.map((take, index) => (
+        <HummingAudioPlayer key={take.id} compact src={take.audioUrl} durationSeconds={take.durationSeconds} label={label(index)} />
+      )) : takes.map((take, index) => (
+        <MessageHummingTake key={take.id} humming={take} ownerKey={ownerKey} label={label(index)} />
+      ))}
+    </div>
+  );
+}
+
+function HummingAnalysisSummary({ humming }: { humming: HummingAttachment }) {
+  return (
+    <section className="mb-3 w-full text-sm text-text-secondary" aria-label={t('hummingAnalysisSummary')}>
+      <p className="font-medium text-text-primary">{t('hummingAnalysisSummary')}</p>
+      <p className="mb-1 text-xs text-text-muted">
+        <code>analyzeHummingWaveform</code>{' · '}{t('hummingWaveformReadComplete')}
+      </p>
+      {hummingTakes(humming).map((take, index) => {
+        const { tempo, meter, notes } = buildHummingWaveformReport(take);
+        const byPitch = [...notes].sort((a, b) => a.midi - b.midi);
+        const low = byPitch[0]?.pitch;
+        const high = byPitch.at(-1)?.pitch;
+        const unknown = zh ? '未知' : 'Unknown';
+        const pitches = notes.slice(0, 12).map(note => note.pitch).join(' · ');
+        return (
+          <div key={take.id} className="mt-2 space-y-0.5">
+            <p>{zh ? '哼唱' : 'Humming'} {String(index + 1).padStart(2, '0')}</p>
+            <p>{zh ? '估计速度' : 'Estimated tempo'} {tempo ? `${tempo.bpm} BPM` : unknown}
+              {' · '}{zh ? '估计拍号' : 'Estimated meter'} {meter?.time_signature ?? unknown}</p>
+            <p>{zh ? '音域' : 'Range'} {low && high ? (low === high ? low : `${low}–${high}`) : unknown}
+              {' · '}{notes.length}{zh ? ' 个音符' : ' notes'}</p>
+            {pitches && <p>{zh ? '音高顺序' : 'Pitch sequence'} {pitches}{notes.length > 12 ? ' …' : ''}</p>}
+            <p>{take.understanding
+              ? `${zh ? '听感' : 'Style'} ${take.understanding.melodyStyle}`
+              : t('hummingStyleAnalysisFailed')}</p>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 // User message text with a "show more / less" affordance. Long messages are
 // clamped to five lines with the fifth faded into the bubble background; the
 // "show more" control reveals on hover (and stays visible on touch, which has
 // no hover), and once expanded a "show less" control collapses it again.
-export function UserMessageBubble({ content }: { content: string }) {
+export function UserMessageBubble({
+  content,
+}: {
+  content: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const textRef = useRef<HTMLParagraphElement>(null);
@@ -292,6 +413,7 @@ export function UserMessageBubble({ content }: { content: string }) {
   // check can't run); the last collapsed measurement stays valid.
   useLayoutEffect(() => {
     if (expanded) return;
+    if (!content.trim()) return;
     const el = textRef.current;
     if (!el) return;
     const measure = () => setOverflowing(el.scrollHeight - el.clientHeight > 1);
@@ -301,22 +423,23 @@ export function UserMessageBubble({ content }: { content: string }) {
     return () => ro.disconnect();
   }, [content, expanded]);
 
-  const clamped = !expanded && overflowing;
+  const clamped = Boolean(content.trim()) && !expanded && overflowing;
 
   return (
     <>
       {/* When clamped, extend the bubble's bottom (pb-5) so the fade region has
           extra room below the fifth line and the "show more" control can sit
           lower, clear of the text. Adjust this pb-* to grow/shrink that gap. */}
-      <div className={`relative${clamped ? ' pb-6' : ''}`}>
-        <p
-          ref={textRef}
-          className={`whitespace-pre-wrap break-words${expanded ? '' : ' line-clamp-5'}`}
-        >
-          {content}
-        </p>
-        {clamped && (
-          <>
+      {content.trim() && (
+        <div className={`relative${clamped ? ' pb-6' : ''}`}>
+          <p
+            ref={textRef}
+            className={`whitespace-pre-wrap break-words${expanded ? '' : ' line-clamp-5'}`}
+          >
+            {content}
+          </p>
+          {clamped && (
+            <>
             {/* Taller fade of the fifth line + the added space into the bubble
                 background. Keyed to `--color-message-user`, the bubble's own
                 fill, rather than to any page surface: the fade only ever runs
@@ -331,10 +454,11 @@ export function UserMessageBubble({ content }: { content: string }) {
             >
               {t('showMore')}
             </button>
-          </>
-        )}
-      </div>
-      {expanded && overflowing && (
+            </>
+          )}
+        </div>
+      )}
+      {content.trim() && expanded && overflowing && (
         <button
           onClick={() => setExpanded(false)}
           className="mt-1 flex w-full justify-start text-[11px] font-medium text-text-muted transition-colors hover:text-text-secondary"
@@ -348,6 +472,11 @@ export function UserMessageBubble({ content }: { content: string }) {
 
 interface ConversationViewProps {
   messages: ChatMessage[];
+  liveRouterProgress?: LiveRouterProgress;
+  pendingHumming?: PendingHummingSubmission | null;
+  hummingWaveformToolCalled?: boolean;
+  onCancelHumming?: () => void;
+  ownerKey?: string;
   revisions?: CodeRevision[];
   isLoading: boolean;
   isVideoMode?: boolean;
@@ -442,7 +571,12 @@ function useSettled<T>(value: T, ms: number): T {
 const DRAFT_DIFF_SETTLE_MS = 180;
 
 export default function ConversationView({
-  messages,
+  messages: sessionMessages,
+  liveRouterProgress,
+  pendingHumming,
+  hummingWaveformToolCalled = false,
+  onCancelHumming,
+  ownerKey,
   revisions,
   isLoading,
   isVideoMode = false,
@@ -464,7 +598,12 @@ export default function ConversationView({
   guidedReply,
   startingSegmentId = null,
 }: ConversationViewProps) {
+  const messages = useMemo<ChatMessage[]>(() => pendingHumming
+    ? [...sessionMessages, { id: pendingHumming.id, role: 'user', content: pendingHumming.text, timestamp: pendingHumming.timestamp }]
+    : sessionMessages, [sessionMessages, pendingHumming]);
+  const turnInProgress = isLoading || Boolean(pendingHumming);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const liveTailRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
   const prevIsLoadingRef = useRef(false);
   const prevHasDraftSegmentRef = useRef(false);
@@ -483,14 +622,14 @@ export default function ConversationView({
   // the filler/anchor are already correct on the very commit that starts the
   // turn instead of lagging a frame behind. Uses state (not a ref) to track
   // the previous value: refs may not be read during render.
-  const [prevIsLoadingSnapshot, setPrevIsLoadingSnapshot] = useState(isLoading);
-  if (isLoading !== prevIsLoadingSnapshot) {
-    setPrevIsLoadingSnapshot(isLoading);
-    if (isLoading && !turnAnchorActive) setTurnAnchorActive(true);
+  const [prevIsLoadingSnapshot, setPrevIsLoadingSnapshot] = useState(turnInProgress);
+  if (turnInProgress !== prevIsLoadingSnapshot) {
+    setPrevIsLoadingSnapshot(turnInProgress);
+    if (turnInProgress && !turnAnchorActive) setTurnAnchorActive(true);
   }
   // In-flight programmatic smooth scroll (turn-start anchoring): its target
   // and a deadline after which it's considered interrupted/finished.
-  const autoScrollRef = useRef<{ target: number; until: number } | null>(null);
+  const autoScrollRef = useRef<{ target: number; until: number; turnStart: boolean; follow?: number } | null>(null);
   // When the reader last touched the scroll themselves (wheel, touch, or a
   // press that may be a scrollbar drag). Programmatic scrolls never set it, so
   // it is what separates "the reader moved this" from "the page moved under
@@ -668,6 +807,7 @@ export default function ConversationView({
       if (auto) {
         if (Math.abs(el.scrollTop - auto.target) < 2) {
           autoScrollRef.current = null; // animation arrived; don't mark manual
+          if (auto.follow !== undefined && !userScrolledRef.current) el.scrollTop = auto.follow;
           return;
         }
         if (performance.now() < auto.until) return;
@@ -675,7 +815,7 @@ export default function ConversationView({
       }
       const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       // The anchor is where the scroll effect holds the reading — the top of
-      // the current turn's user bubble in turn-anchor mode, the bottom pin
+      // the live tail or user bubble in turn-anchor mode, the bottom pin
       // otherwise. Deviation is measured from it in *either* direction: with a
       // user bubble taller than the viewport the anchor sits near the top, so
       // scrolling down past it to reach the reasoning window is as much a
@@ -811,17 +951,16 @@ export default function ConversationView({
   // (no flicker). Once a turn starts, the view anchors that turn's user bubble
   // to the top of the viewport via its layout offset (the turn filler
   // guarantees enough room below from the very first commit) and keeps
-  // anchoring there — through streaming, through the turn ending normally, and
-  // through interrupts — so stopping/retrying never re-pins to the bottom and
-  // yanks the bubble to a different position. Turn start animates there
+  // anchoring there until live Router output extends below the visible area.
+  // Then follow the output tail while the status row sticks at the top. Turn start animates there
   // smoothly — one continuous, natural glide; every commit after that keeps
   // the position without motion. Before the first turn (e.g. a freshly opened
   // past session) it falls back to pinning the bottom.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const turnJustStarted = isLoading && !prevIsLoadingRef.current;
-    prevIsLoadingRef.current = isLoading;
+    const turnJustStarted = turnInProgress && !prevIsLoadingRef.current;
+    prevIsLoadingRef.current = turnInProgress;
     const draftJustAppeared = hasDraftSegment && !prevHasDraftSegmentRef.current;
     prevHasDraftSegmentRef.current = hasDraftSegment;
     if (isVideoMode && !scrollBottom) {
@@ -862,6 +1001,13 @@ export default function ConversationView({
       // full viewport for stable scroll range, but its inner window must not
       // fill all of that height: revealing that oversized window scrolls the
       // user bubble offscreen, then brings it back when reasoning ends.
+      const liveTail = liveTailRef.current;
+      if (liveTail && !turnJustStarted) {
+        const tailBottom = liveTail.getBoundingClientRect().bottom;
+        const viewportBottom = el.getBoundingClientRect().top + el.clientTop + el.clientHeight;
+        const revealTarget = el.scrollTop + tailBottom - viewportBottom + 16;
+        target = Math.max(target, Math.min(bottomPin, revealTarget));
+      }
       const preEl = reasoningScrollRef.current;
       if (preEl) {
         let reasoningTop = 0;
@@ -912,8 +1058,12 @@ export default function ConversationView({
       if (!userScrolledRef.current) {
         const auto = autoScrollRef.current;
         if (turnJustStarted || draftJustAppeared) {
-          autoScrollRef.current = { target, until: performance.now() + 800 };
+          autoScrollRef.current = { target, until: performance.now() + 800, turnStart: turnJustStarted };
           el.scrollTo({ top: target, behavior: 'smooth' });
+        } else if (auto?.turnStart && liveTail && performance.now() < auto.until
+          && Math.abs(el.scrollTop - auto.target) >= 2) {
+          // Let the user bubble land before following any early output.
+          auto.follow = target;
         } else if (auto && performance.now() < auto.until && Math.abs(auto.target - target) <= 1) {
           // Let an intentional reveal finish while its destination is stable.
         } else {
@@ -930,7 +1080,7 @@ export default function ConversationView({
       // streamed text is left where the reader put it, and the jump-to-latest
       // button below is what takes them to the live end when they want it.
     }
-  }, [messages, isLoading, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive, hasDraftSegment, reasoningCollapsed, reasoningViewportSize]);
+  }, [messages, turnInProgress, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive, hasDraftSegment, reasoningCollapsed, reasoningViewportSize, liveRouterProgress]);
 
   // Pre-process: attach each reasoning progress message to the next assistant message.
   const { absorbedReasoningIds } = useMemo(() => {
@@ -1056,10 +1206,10 @@ export default function ConversationView({
     // assistant summary that ends the turn.
     const durationSec = new Map<string, number>();
     for (let i = 0; i < messages.length; ) {
-      if (messages[i].role !== 'progress') { i++; continue; }
+      if (messages[i].role !== 'progress' || messages[i].routerProgress) { i++; continue; }
       let j = i;
       const run: ChatMessage[] = [];
-      while (j < messages.length && messages[j].role === 'progress') run.push(messages[j++]);
+      while (j < messages.length && messages[j].role === 'progress' && !messages[j].routerProgress) run.push(messages[j++]);
       const followedByAssistant = j < messages.length && messages[j].role === 'assistant';
       if (followedByAssistant && run.some(isVisible)) {
         const gid = run[0].id;
@@ -1168,14 +1318,25 @@ export default function ConversationView({
   // with the indicator when the turn ends. Only the current in-flight turn's
   // progress counts — completed turns keep their progress messages (for the
   // "思考过程" group) and always end with a stale commit ("准备播放").
-  const liveStatusLabel = useMemo(() => {
-    const lastAssistantIdx = messages.findLastIndex((m) => m.role === 'assistant');
-    const last = messages.slice(lastAssistantIdx + 1).findLast((m) => m.role === 'progress');
-    if (last && (last.progressKind === 'tool_call' || last.progressKind === 'commit')) {
-      return last.content;
-    }
-    return t('thinking');
-  }, [messages]);
+  const lastMessage = messages.at(-1);
+  const liveStatus = lastMessage?.role === 'progress' &&
+    (lastMessage.progressKind === 'tool_call' || lastMessage.progressKind === 'commit')
+    ? lastMessage
+    : undefined;
+  const isSearchingSamples = liveStatus?.toolName === 'searchSamples';
+  const stage = liveRouterProgress?.stage;
+  const liveStatusLabel = liveRouterProgress?.operation
+    ?? (stage ? t(routerStageLabels[stage])
+      : isSearchingSamples ? t('searchingSamples') : liveStatus?.content ?? t('thinking'));
+  const liveReply = isLoading ? liveRouterProgress?.reply : undefined;
+  const liveReplyMessageId = liveReply
+    ? messages.findLast((message) => loadingTurnAssistantIds.has(message.id))?.id
+    : undefined;
+  const routerProcess = useMemo(
+    () => groupRouterProcess(messages, isLoading ? lastUserIndex : undefined),
+    [messages, isLoading, lastUserIndex],
+  );
+  const sampleSearchSummary = isSearchingSamples ? liveStatus?.sampleSearchSummary : undefined;
 
   // Renders a single progress message's content (thinking narration, the
   // collapsed "思考" reasoning window, or a warning). Reused both inline while
@@ -1248,6 +1409,9 @@ export default function ConversationView({
     // Tool-call / commit labels ("编排段落…", "准备播放…") are transient
     // status — don't keep them in the conversation stream once the tool
     // call is done.
+    if (msg.progressKind === 'tool_call' && msg.toolName === 'analyzeHummingWaveform') {
+      return <div key={msg.id} className="px-2 text-sm text-text-muted"><code>analyzeHummingWaveform</code>{' · '}{msg.content}</div>;
+    }
     if (msg.progressKind === 'tool_call' || msg.progressKind === 'commit') {
       return null;
     }
@@ -1276,6 +1440,35 @@ export default function ConversationView({
       </div>
     );
   };
+
+  const loadingHeader = isLoading ? (
+    <div key="live-reply-heading" data-live-reply-heading
+      className="sticky top-0 z-20 flex items-start gap-1.5 bg-conversation-surface px-1.5">
+      <ThinkingLottieSuspense className="w-5 h-5 flex-shrink-0" />
+      <div className="min-w-0">
+        {reasoningWindowAvailable ? (
+          <button
+            data-live-reasoning-toggle
+            onClick={() => setReasoningCollapsed((v) => !v)}
+            aria-expanded={reasoningWindowExpanded}
+            className={`flex min-w-0 items-center gap-1.5 text-left ${bodyText} text-text-primary transition-colors hover:text-text-secondary`}
+            title={reasoningWindowExpanded ? t('collapseReasoning') : t('expandReasoning')}
+          >
+            <span data-live-reasoning-label className="min-w-0">{liveStatusLabel}</span>
+            <ChevronRightIcon
+              size={18}
+              className={`flex-shrink-0 transition-transform ${reasoningWindowExpanded ? 'rotate-90' : ''}`}
+            />
+          </button>
+        ) : (
+          <div role="status" className={`min-w-0 ${bodyText} text-text-primary`}>{liveStatusLabel}</div>
+        )}
+        {sampleSearchSummary && sampleSearchSummary.length > 0 && (
+          <SampleSearchSummary key={liveStatus?.id} items={sampleSearchSummary} />
+        )}
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div className="conversation-scroll-shell">
@@ -1334,9 +1527,23 @@ export default function ConversationView({
         </div>
       )}
 
+      {lastUserIndex < 0 && loadingHeader}
       {messages.map((msg, messageIndex) => {
         if (msg.isGreeting) return null;
         if (msg.role === 'progress') {
+          if (msg.routerProgress) {
+            const processId = routerProcess.groupOf.get(msg.id);
+            if (processId !== undefined) {
+              const process = routerProcess.groups.get(msg.id);
+              return process ? <RouterProcessView key={msg.id} id={msg.id} process={process}
+                expanded={expandedActions.has(msg.id)} onToggle={() => toggleActions(msg.id)}
+                markSize={markSize} formatDuration={formatThinkDuration} /> : null;
+            }
+            const duration = routerStrategySeconds(msg.routerProgress);
+            return <RouterProgressView key={msg.id} entry={msg.routerProgress}
+              live={isLoading && messageIndex > lastUserIndex}
+              durationLabel={duration === undefined ? undefined : formatThinkDuration(duration)} />;
+          }
           const gid = actionGroupOf.get(msg.id);
           if (gid) {
             // Part of a completed turn's "行动过程" group.
@@ -1355,23 +1562,8 @@ export default function ConversationView({
                 }}
               >
                 {isHeader && (
-                  <div className="px-2">
-                    <button
-                      data-action-process-toggle={gid}
-                      onClick={() => toggleActions(gid)}
-                      className="flex items-center gap-1.5 text-sm text-text-secondary/60 hover:text-text-secondary transition-colors"
-                    >
-                      <span>{t('actionsTitle')}</span>
-                      {actionGroupDurationSec.get(gid) != null && (
-                        <span>· {formatThinkDuration(actionGroupDurationSec.get(gid)!)}</span>
-                      )}
-                      <ChevronRightIcon
-                        size={markSize}
-                        className={`flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
-                      />
-                    </button>
-                    <div className="mt-2 border-b border-border/60" />
-                  </div>
+                  <ActionProcessHeader id={gid} expanded={expanded} onToggle={() => toggleActions(gid)}
+                    markSize={markSize} duration={formatThinkDuration(actionGroupDurationSec.get(gid)!)} />
                 )}
                 {content && <div className={isHeader ? 'mt-3' : ''}>{content}</div>}
               </div>
@@ -1381,9 +1573,10 @@ export default function ConversationView({
         }
 
         if (msg.role === 'user') {
+          const pending = msg.id === pendingHumming?.id ? pendingHumming : undefined;
           const hasText = Boolean(msg.content.trim());
           const imageOnly = !hasText && Boolean(msg.images?.length);
-          const rollbackButtonEnabled = !isMobile || imageOnly || longPressedId === msg.id;
+          const rollbackButtonEnabled = !pending && (!isMobile || imageOnly || longPressedId === msg.id);
           const rollbackButton = (
             <div className={`absolute -top-2.5 -right-2.5 transition-opacity ${
               isMobile
@@ -1401,22 +1594,54 @@ export default function ConversationView({
             </div>
           );
           return (
-            <div
-              key={msg.id}
-              className="flex justify-end items-end gap-1.5 animate-fade-in group"
-            >
+            <Fragment key={msg.id}>
               <div
-                className={`relative flex max-w-[85%] flex-col items-end gap-2 ${bodyText} text-text-primary${
-                  isMobile ? ' mobile-rollback-bubble-no-select' : ''
-                }`}
-                data-rollback-bubble={msg.id}
-                onCopy={handleUserBubbleCopy}
-                {...getMobileRollbackBubbleProps(msg.id)}
+                className="flex justify-end items-end gap-1.5 animate-fade-in group"
               >
-                {Boolean(msg.images?.length) && <div className="relative max-w-full"><div className="[&>div]:justify-end [&>div]:py-0"><MessageImages images={msg.images} /></div>{imageOnly && rollbackButton}</div>}
-                {hasText && <div className="relative max-w-full rounded-[6px] bg-message-user px-3 py-2"><UserMessageBubble content={msg.content} />{rollbackButton}</div>}
+                <div
+                  className={`relative flex min-w-0 max-w-[85%] flex-col items-end gap-2 ${bodyText} text-text-primary${
+                    isMobile ? ' mobile-rollback-bubble-no-select' : ''
+                  }`}
+                  data-rollback-bubble={msg.id}
+                  onCopy={handleUserBubbleCopy}
+                  {...(!pending ? getMobileRollbackBubbleProps(msg.id) : {})}
+                >
+                  {Boolean(msg.images?.length) && <div className="relative max-w-full"><MessageImages images={msg.images} />{imageOnly && !pending && rollbackButton}</div>}
+                  <MessageHummingCards humming={msg.humming} pending={pending} ownerKey={ownerKey} />
+                  <div className={`relative max-w-full ${hasText ? 'rounded-[6px] bg-message-user px-3 py-2' : ''}`}>
+                    {hasText && <UserMessageBubble content={msg.content} />}
+                    {/* Rollback button — top-right of bubble. Desktop: visible on group-hover. Mobile: visible on long-press (no real hover state on touch). */}
+                    {!pending && <div className={`absolute -right-2.5 transition-opacity ${hasText ? '-top-2.5' : 'bottom-2.5'} ${
+                      isMobile
+                        ? (rollbackButtonEnabled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none')
+                        : 'opacity-0 group-hover:opacity-100'
+                    }`}>
+                      <button
+                        onClick={() => { onRollback(msg.id); setLongPressedId(null); }}
+                        disabled={!rollbackButtonEnabled}
+                        className="conversation-rollback-button w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
+                        title={t('rollbackHere')}
+                      >
+                        <Undo2 size={12} />
+                      </button>
+                    </div>}
+                  </div>
+                </div>
               </div>
-            </div>
+              {pending && (
+                <div data-assistant-humming-progress className="flex items-start justify-between gap-2 px-2 text-sm text-text-secondary">
+                  <div role="status">
+                    {hummingWaveformToolCalled ? (
+                      <>
+                        <code>analyzeHummingWaveform</code>{' · '}{t('hummingReadingWaveform')}
+                        {pending.takes.length > 1 && ` (${pending.takeNumber}/${pending.takes.length})`}
+                      </>
+                    ) : t('hummingTranscribing')}
+                  </div>
+                  {onCancelHumming && <button type="button" className="shrink-0 underline" onClick={onCancelHumming}>{t('hummingCancelRecognition')}</button>}
+                </div>
+              )}
+            </Fragment>
           );
         }
 
@@ -1429,9 +1654,12 @@ export default function ConversationView({
         const showsTurnActions =
           turnFinalAssistantIds.has(msg.id) && !loadingTurnAssistantIds.has(msg.id);
         const stepwiseChoice = msg.inputMode === 'choice' ? parseStepwiseChoice(msg.content) : null;
+        const analyzedHumming = showsTurnActions
+          ? messages.slice(0, messageIndex).findLast(message => message.role === 'user')?.humming
+          : undefined;
         const previousMessage = messages[messageIndex - 1];
         const previousActionGroupId = previousMessage
-          ? actionGroupOf.get(previousMessage.id)
+          ? routerProcess.groupOf.get(previousMessage.id) ?? actionGroupOf.get(previousMessage.id)
           : undefined;
         const followsCollapsedActionGroup =
           previousActionGroupId !== undefined && !expandedActions.has(previousActionGroupId);
@@ -1456,7 +1684,9 @@ export default function ConversationView({
             <div data-message-id={msg.id} className={`relative w-full rounded-xl px-2 pb-2 ${bodyText} bg-transparent text-text-primary ${
               followsCollapsedActionGroup ? 'pt-0' : 'pt-2'
             }`}>
-              <MarkdownText content={stepwiseChoice?.content ?? msg.content} />
+              {analyzedHumming && <HummingAnalysisSummary humming={analyzedHumming} />}
+              <MarkdownText content={msg.id === liveReplyMessageId ? liveReply! : stepwiseChoice?.content ?? msg.content} />
+              {msg.id === liveReplyMessageId && <div ref={liveTailRef} data-live-reply-tail aria-hidden="true" />}
               {stepwiseChoice && messageIndex < lastUserIndex && (
                 <details className="mt-2 text-xs text-text-secondary">
                   <summary className="w-fit cursor-pointer rounded-sm py-1 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
@@ -1594,7 +1824,7 @@ export default function ConversationView({
             </div>
           </div>
         );
-      })}
+      }).flatMap((row, index) => index === lastUserIndex ? [row, loadingHeader] : [row])}
 
       {/* The manual edit, standing on its own at the end of the reading.
           Derived from the draft rather than stored in `messages`, which is what
@@ -1645,26 +1875,14 @@ export default function ConversationView({
           className="animate-fade-in flex flex-col"
           style={!isVideoMode ? { height: turnFillerHeight } : undefined}
         >
-          <div className="flex items-start gap-1.5 px-1.5 shrink-0">
-            <ThinkingLottieSuspense className="w-5 h-5 flex-shrink-0" />
-            {reasoningWindowAvailable ? (
-              <button
-                data-live-reasoning-toggle
-                onClick={() => setReasoningCollapsed((v) => !v)}
-                aria-expanded={reasoningWindowExpanded}
-                className={`flex min-w-0 items-center gap-1.5 text-left ${bodyText} text-text-primary transition-colors hover:text-text-secondary`}
-                title={reasoningWindowExpanded ? t('collapseReasoning') : t('expandReasoning')}
-              >
-                <span data-live-reasoning-label className="min-w-0">{liveStatusLabel}</span>
-                <ChevronRightIcon
-                  size={18}
-                  className={`flex-shrink-0 transition-transform ${reasoningWindowExpanded ? 'rotate-90' : ''}`}
-                />
-              </button>
-            ) : (
-              <div className={`min-w-0 ${bodyText} text-text-primary`}>{liveStatusLabel}</div>
-            )}
-          </div>
+          {liveReply && !liveReplyMessageId && (
+            <div className={`shrink-0 px-2 ${bodyText} text-text-primary`} data-live-router-reply>
+              <MarkdownText content={liveReply} />
+            </div>
+          )}
+          {!liveReplyMessageId && (liveRouterProgress || (lastMessage?.routerProgress && messages.length - 1 > lastUserIndex)) && (
+            <div ref={liveTailRef} data-live-reply-tail aria-hidden="true" />
+          )}
           {reasoningWindowExpanded && streamingReasoningMsg && (
             // flex-1 (rather than a calc'd height) fills exactly whatever
             // room the fixed height above leaves after the indicator row.

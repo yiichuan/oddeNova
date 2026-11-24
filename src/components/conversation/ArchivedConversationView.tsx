@@ -1,3 +1,5 @@
+import { RouterProcessView } from './RouterProgressView';
+import { groupRouterProcess } from './router-progress-display';
 import MessageImages from './MessageImages';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
@@ -6,7 +8,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { t } from '../../lib/i18n';
 import { takeLabel } from '../../lib/favorite-conversations';
 import { ChevronRightIcon, PlayIcon, StopIcon } from '../icons';
-import { MarkdownText, UserMessageBubble } from './ConversationView';
+import { formatThinkDuration, MarkdownText, MessageHummingCards, UserMessageBubble } from './ConversationView';
 import { useScrollActivity } from '../../hooks/useScrollActivity';
 
 /** How long the bar stays up after the last scroll, in ms — the mobile code
@@ -14,6 +16,7 @@ import { useScrollActivity } from '../../hooks/useScrollActivity';
 
 interface ArchivedConversationViewProps {
   messages: readonly ChatMessage[];
+  ownerKey?: string;
   onSelectCode: (messageId: string) => void;
   onPlayCode: (messageId: string, code: string) => void;
   onStopCode: () => void;
@@ -168,6 +171,7 @@ export function ArchiveCodeChip({
 
 export default function ArchivedConversationView({
   messages,
+  ownerKey,
   onSelectCode,
   onPlayCode,
   onStopCode,
@@ -229,11 +233,13 @@ export default function ArchivedConversationView({
     });
     return ids;
   }, [messages]);
+  const routerProcess = useMemo(() => groupRouterProcess(messages), [messages]);
   const visibleMessages = useMemo(
     () => messages.filter((message) => (
       message.role !== 'progress' || arrangeReasoningIds.has(message.id)
+      || routerProcess.groups.has(message.id)
     )),
-    [messages, arrangeReasoningIds],
+    [messages, arrangeReasoningIds, routerProcess],
   );
 
   /* A favorite opens at its end. What was kept is the take the exchange
@@ -416,6 +422,10 @@ export default function ArchivedConversationView({
              belongs on the vertical is the bubble's own. */
           const isFirst = index === 0;
           const isLast = index === visibleMessages.length - 1;
+          const process = routerProcess.groups.get(message.id);
+          if (process) return <RouterProcessView key={message.id} id={message.id} process={process}
+            expanded={expandedReasoning.has(message.id)} onToggle={() => toggleReasoning(message.id)}
+            markSize={markSize} formatDuration={formatThinkDuration} />;
           if (message.role === 'progress') {
             const expanded = expandedReasoning.has(message.id);
             return (
@@ -508,9 +518,14 @@ export default function ArchivedConversationView({
                 data-favorites-turn={message.id}
                 className="flex justify-end items-end gap-1.5 animate-fade-in"
               >
-                <div className={`relative flex max-w-[85%] flex-col items-end gap-2 ${bodyText} text-text-primary`}>
+                <div className={`flex min-w-0 max-w-[85%] flex-col items-end gap-2 ${bodyText} text-text-primary`}>
                   {Boolean(message.images?.length) && <div className="max-w-full [&>div]:justify-end [&>div]:py-0"><MessageImages images={message.images} /></div>}
-                  {message.content.trim() && <div className="max-w-full rounded-[6px] bg-message-user px-3 py-2"><UserMessageBubble content={message.content} /></div>}
+                  <MessageHummingCards humming={message.humming} ownerKey={ownerKey} />
+                  {message.content.trim() && (
+                    <div className="max-w-full rounded-[6px] bg-message-user px-3 py-2">
+                      <UserMessageBubble content={message.content} />
+                    </div>
+                  )}
                 </div>
               </div>
             );
