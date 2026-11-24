@@ -11,7 +11,7 @@ import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, 
 import { t, zh } from '../../lib/i18n';
 import { DRAFT_SEGMENT_ID, draftBaseCode } from '../../lib/draft-diff';
 import { CodeDiffView } from './CodeDiffView';
-import { parseStepwiseChoice, stepwiseOptionText } from '../../services/suggestions';
+import { parseStepwiseChoice } from '../../services/suggestions';
 
 // The lottie player and its JSON stay out of first paint: declared at module
 // scope (never inside render) and mounted only where the thinking indicator
@@ -1456,18 +1456,6 @@ export default function ConversationView({
               followsCollapsedActionGroup ? 'pt-0' : 'pt-2'
             }`}>
               <MarkdownText content={stepwiseChoice?.content ?? msg.content} />
-              {stepwiseChoice && messageIndex < lastUserIndex && (
-                <details className="mt-2 text-xs text-text-secondary">
-                  <summary className="w-fit cursor-pointer rounded-sm py-1 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
-                    {t('previousChoiceOptions').replace('{count}', String(stepwiseChoice.options.length))}
-                  </summary>
-                  <ol className="my-1 list-decimal space-y-1 pl-5 [overflow-wrap:anywhere]">
-                    {stepwiseChoice.options.map((option, index) => (
-                      <li key={index}>{stepwiseOptionText(option)}</li>
-                    ))}
-                  </ol>
-                </details>
-              )}
               {msg.code && msg.revisionId && revisionsById.has(msg.revisionId) && (
                 <CodeDiffView
                   messageId={msg.id}
