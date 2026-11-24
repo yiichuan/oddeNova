@@ -604,10 +604,13 @@ body {
   pointer-events: auto;
   cursor: pointer;
   color: var(--color-text-muted);
+}
+
+.chat-suggestion-key[data-motion='intro'] {
   animation: chat-suggestion-key-appear 140ms ease-out both, chat-suggestion-key-color 420ms both;
 }
 
-.chat-suggestion-key[data-hovered='true'] {
+.chat-suggestion-key[data-motion='hover'] {
   --tab-key-outline: var(--color-brand-accent);
 }
 
@@ -621,10 +624,13 @@ body {
   font-family: inherit;
   font-size: 11px;
   font-weight: 500;
+}
+
+.chat-suggestion-key[data-motion='intro'] .chat-suggestion-key-cap {
   animation: chat-suggestion-key-press 290ms 130ms both;
 }
 
-.chat-suggestion-key[data-hovered='true'] .chat-suggestion-key-cap {
+.chat-suggestion-key[data-motion='hover'] .chat-suggestion-key-cap {
   animation: chat-suggestion-key-hover-press var(--tab-key-hover-cycle) infinite;
 }
 
@@ -650,10 +656,13 @@ body {
   width: 10px;
   height: 0;
   opacity: 0;
+}
+
+.chat-suggestion-key[data-motion='intro'] .chat-suggestion-key-impact {
   animation: chat-suggestion-key-impact 240ms 215ms ease-out both;
 }
 
-.chat-suggestion-key[data-hovered='true'] .chat-suggestion-key-impact {
+.chat-suggestion-key[data-motion='hover'] .chat-suggestion-key-impact {
   color: var(--color-brand-accent);
   animation: chat-suggestion-key-hover-impact var(--tab-key-hover-cycle) ease-out infinite;
 }
@@ -707,8 +716,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-suggestion-key,
-  .chat-suggestion-key[data-hovered] :is(.chat-suggestion-key-cap, .chat-suggestion-key-impact) { animation: none; }
+  .chat-suggestion-key[data-motion],
+  .chat-suggestion-key[data-motion] :is(.chat-suggestion-key-cap, .chat-suggestion-key-impact) { animation: none; }
 }
 
 .chat-recording-pill {

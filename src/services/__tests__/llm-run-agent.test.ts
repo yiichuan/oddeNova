@@ -3,7 +3,7 @@ import type { RunAgentOptions } from '../../agent/loop';
 import type { ConversationTurn } from '../llm';
 
 const runAgentLoopMock = vi.hoisted(() => vi.fn());
-const getActivePersonaSyncMock = vi.hoisted(() => vi.fn(() => ({
+const getActivePersonaSyncMock = vi.hoisted(() => vi.fn((): { id: string; name: string; prompt?: string } => ({
   id: 'persona-1',
   name: 'Nocturne',
   prompt: 'CUSTOM_PERSONA',
@@ -88,9 +88,10 @@ vi.mock('../../demo/demo-llm', () => ({
   createDemoMoodLLMCaller: vi.fn(),
 }));
 
-import { runAgent, classifyIntent } from '../llm';
+import { runAgent, classifyIntent, runConversationTurn, type ConversationRequest } from '../llm';
 import type { LLMCaller } from '../../agent/loop';
 import { isZh } from '../../lib/i18n';
+import { buildPersonaBlock } from '../../persona/oddenova';
 
 describe('runAgent conversationHistory pass-through', () => {
   beforeEach(() => {
@@ -701,5 +702,195 @@ describe('createOpenAILLMCaller provider-shaped requests', () => {
       thinking: { type: 'enabled' },
       reasoning_effort: 'low',
     }));
+  });
+});
+
+describe('Router and Session integration', () => {
+  function editTask(needsSynthesis = false) {
+    return { instruction: 'Lower the kick gain only.', scope: 'parameter', targets: ['layer-1'], parameter: 'gain', needsSynthesis };
+  }
+
+  function request(text: string, over: Partial<ConversationRequest> = {}): ConversationRequest {
+    return {
+      text,
+      ref: { sessionId: 'session-1', turnId: 'turn-1', messageId: 'message-1' },
+      current: { code: 's("bd").gain(0.8)', revisionId: 'rev-current' },
+      previous: { code: 's("bd").gain(1)', revisionId: 'rev-previous' },
+      signal: new AbortController().signal,
+      ...over,
+    };
+  }
+
+  function respond(text: string, name?: string, args?: unknown) {
+    return {
+      on: vi.fn(),
+      finalMessage: async () => ({
+        content: [
+          ...(text ? [{ type: 'text', text }] : []),
+          ...(name ? [{ type: 'tool_use', id: 'call-1', name, input: args }] : []),
+        ],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+    };
+  }
+
+  beforeEach(() => {
+    runAgentLoopMock.mockReset().mockResolvedValue({
+      code: 's("bd").gain(0.4)', explanation: 'Lowered the kick', iterations: 1, committed: true,
+    });
+    getActiveModelConfigMock.mockReturnValue({ ...officialModelConfig, provider: 'anthropic', protocol: 'anthropic' });
+    anthropicStreamMock.mockReset();
+  });
+
+  it('styles a direct reply after neutral routing and never calls the music loop', async () => {
+    anthropicStreamMock.mockReturnValueOnce(respond('The melody would feel closer.'))
+      .mockReturnValueOnce(respond('The melody would feel closer.'));
+    await expect(runConversationTurn(request('What if the drums were quieter?'))).resolves.toEqual({
+      kind: 'reply', route: 'reply', text: 'The melody would feel closer.',
+    });
+    expect(anthropicStreamMock).toHaveBeenCalledTimes(2);
+    expect(anthropicStreamMock.mock.calls[0][0].system).not.toContain('Nocturne');
+    expect(anthropicStreamMock.mock.calls[1][0].system).toContain('Nocturne');
+    expect(anthropicStreamMock.mock.calls[1][0].system).toContain('CUSTOM_PERSONA');
+    expect(runAgentLoopMock).not.toHaveBeenCalled();
+  });
+
+  it('loads the full built-in persona only for the user-facing reply to a greeting', async () => {
+    getActivePersonaSyncMock.mockReturnValueOnce({ id: 'oddenova', name: 'oddeNova' });
+    vi.mocked(isZh).mockReturnValueOnce(true);
+    const draft = '你好！现在还没有任何编曲内容。';
+    const reply = '你好呀。我是 oddeNova。我在这里，听你说。';
+    anthropicStreamMock.mockReturnValueOnce(respond(draft)).mockReturnValueOnce(respond(reply));
+
+    await expect(runConversationTurn(request('你好', {
+      current: { code: '', revisionId: 'rev-empty' },
+    }))).resolves.toEqual({ kind: 'reply', route: 'reply', text: reply });
+
+    expect(buildPersonaBlock).toHaveBeenLastCalledWith('zh');
+    expect(anthropicStreamMock).toHaveBeenCalledTimes(2);
+    const [route, answer] = anthropicStreamMock.mock.calls.map(([payload]) => payload);
+    expect(route.system).not.toContain('BUILTIN_PERSONA');
+    expect(answer.system).toContain('BUILTIN_PERSONA');
+    expect(answer.tools).toBeUndefined();
+    expect(runAgentLoopMock).not.toHaveBeenCalled();
+  });
+
+  it('streams only the user-facing Router reply', async () => {
+    const draft = respond('Neutral draft');
+    const reply = respond('Hello there.');
+    reply.on.mockImplementation((event, listener) => {
+      if (event === 'text') {
+        listener('Hello');
+        listener(' there.');
+      }
+    });
+    anthropicStreamMock.mockReturnValueOnce(draft).mockReturnValueOnce(reply);
+    const onProgress = vi.fn();
+
+    await expect(runConversationTurn(request('Hi', { onProgress }))).resolves.toMatchObject({
+      kind: 'reply', text: 'Hello there.',
+    });
+    expect(draft.on).not.toHaveBeenCalledWith('text', expect.any(Function));
+    expect(onProgress.mock.calls.map(([event]) => event).filter(event => event.kind.startsWith('router_reply_'))).toEqual([
+      { kind: 'router_reply_delta', delta: 'Hello' },
+      { kind: 'router_reply_delta', delta: ' there.' },
+    ]);
+  });
+
+  it('passes only the Router brief to Session and keeps the conversation with Router', async () => {
+    anthropicStreamMock.mockReturnValueOnce(respond('', 'executeSession', editTask()));
+    const text = '把鼓调轻一点';
+    const history: ConversationTurn[] = [{ role: 'assistant', content: '鼓使用底鼓音色。' }];
+    await expect(runConversationTurn(request(text, { history }))).resolves.toMatchObject({
+      kind: 'execute', result: { committed: true }, synthesize: undefined,
+    });
+    expect(anthropicStreamMock).toHaveBeenCalledOnce();
+    expect(runAgentLoopMock).toHaveBeenCalledOnce();
+    expect(runAgentLoopMock).toHaveBeenCalledWith(expect.objectContaining({
+      instruction: expect.stringContaining('Lower the kick gain only.'),
+      preparedUserContent: expect.not.stringContaining(text),
+      initialCode: 's("bd").gain(0.8)', preparedHistory: [], enableThinking: true,
+      systemPrompt: expect.not.stringContaining('Nocturne'),
+    }));
+  });
+
+  it('emits the actual Router to Session handoff and evidence before returning the answer', async () => {
+    anthropicStreamMock
+      .mockReturnValueOnce(respond('', 'inspectSession', { question: 'What gain changed?' }))
+      .mockReturnValueOnce(respond('The gain went from 1 to 0.8.'));
+    const trace = vi.fn();
+    await runConversationTurn(request('What changed?', { trace }));
+    expect(trace.mock.calls.map(([event]) => [event.from, event.to])).toEqual([
+      ['client', undefined], ['client', 'router'], ['router', 'model'], ['model', 'router'], ['router', 'session'],
+      ['session', 'router'], ['router', 'model'], ['model', 'router'], ['router', 'client'],
+    ]);
+    expect(trace.mock.calls[5][0].data).toMatchObject({
+      current: { revisionId: 'rev-current' }, previous: { revisionId: 'rev-previous' },
+    });
+  });
+
+  it('passes both versions to a read-only answer, with no generation or write tools', async () => {
+    anthropicStreamMock
+      .mockReturnValueOnce(respond('', 'inspectSession', { question: 'What gain changed?' }))
+      .mockReturnValueOnce(respond('The gain went from 1 to 0.8.'));
+    await expect(runConversationTurn(request('What changed in the last revision?'))).resolves.toEqual({
+      kind: 'reply', route: 'inspect', text: 'The gain went from 1 to 0.8.',
+    });
+    expect(runAgentLoopMock).not.toHaveBeenCalled();
+    const answerRequest = anthropicStreamMock.mock.calls[1][0];
+    expect(answerRequest.tools).toBeUndefined();
+    expect(JSON.stringify(answerRequest.messages)).toContain('rev-previous');
+    expect(JSON.stringify(answerRequest.messages)).toContain('rev-current');
+  });
+
+  it('waits for an execution receipt before synthesizing and gives that call no tools', async () => {
+    anthropicStreamMock
+      .mockReturnValueOnce(respond('Working on it', 'executeSession', editTask(true)))
+      .mockReturnValueOnce(respond('The kick sits farther back now.'));
+    const input = request('Lower the kick and explain the effect.');
+    const result = await runConversationTurn(input);
+    expect(anthropicStreamMock).toHaveBeenCalledOnce();
+    if (result.kind !== 'execute') throw new Error('Expected execution');
+    await expect(result.synthesize?.({
+      ref: input.ref, revisionId: 'rev-new', status: 'saved', playback: 'failed',
+    })).resolves.toBe('The kick sits farther back now.');
+    expect(anthropicStreamMock.mock.calls[1][0].tools).toBeUndefined();
+    expect(JSON.stringify(anthropicStreamMock.mock.calls[1][0].messages)).toContain('rev-new');
+  });
+
+  it('reports a scope conflict for an out-of-scope candidate even when Session claims it committed', async () => {
+    anthropicStreamMock.mockReturnValueOnce(respond('', 'executeSession', editTask()));
+    runAgentLoopMock.mockResolvedValueOnce({
+      code: 's("hh").gain(0.4)', explanation: 'Private working notes', iterations: 1, committed: true,
+    });
+    const result = await runConversationTurn(request('Lower the kick only.'));
+    expect(result).toMatchObject({ kind: 'execute', status: 'scope_conflict' });
+    expect(JSON.stringify(result)).not.toContain('Private working notes');
+  });
+
+  it('never delegates on an invalid tool call and recovers on the single retry', async () => {
+    anthropicStreamMock
+      .mockReturnValueOnce(respond('', 'executeSession', { needsSynthesis: true, sessionId: 'other' }))
+      .mockReturnValueOnce(respond('Which drum do you mean?'))
+      .mockReturnValueOnce(respond('Which drum do you mean?'));
+    const onProgress = vi.fn();
+    await expect(runConversationTurn(request('Do it', { onProgress }))).resolves.toMatchObject({ kind: 'reply' });
+    expect(onProgress).toHaveBeenCalledWith({ kind: 'request_retry' });
+    expect(anthropicStreamMock).toHaveBeenCalledTimes(3);
+    expect(runAgentLoopMock).not.toHaveBeenCalled();
+  });
+
+  it('forwards OpenAI-compatible tool results through the same decision parser', async () => {
+    getActiveModelConfigMock.mockReturnValue(officialModelConfig);
+    async function* stream() {
+      yield { choices: [{ delta: { tool_calls: [{
+        index: 0, id: 'call-1', function: { name: 'executeSession', arguments: JSON.stringify(editTask()) },
+      }] } }] };
+    }
+    openAIChatCreateMock.mockReset().mockResolvedValueOnce(stream());
+    await expect(runConversationTurn(request('Lower the kick.'))).resolves.toMatchObject({ kind: 'execute' });
+    expect(openAIChatCreateMock).toHaveBeenCalledOnce();
+    expect(openAIChatCreateMock.mock.calls[0][0].tools).toHaveLength(2);
+    expect(runAgentLoopMock).toHaveBeenCalledOnce();
   });
 });

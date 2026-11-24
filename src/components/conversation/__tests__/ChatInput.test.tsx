@@ -216,6 +216,7 @@ describe('ChatInput engine initialization status', () => {
 
       act(() => key.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
       expect(container.textContent).not.toContain('Press Tab to fill');
+      expect(key.parentElement?.dataset.motion).toBe('rest');
       advance(5500);
       advance(350);
       advance(400);
@@ -225,6 +226,7 @@ describe('ChatInput engine initialization status', () => {
       advance(80);
       advance(350);
       expect(tabKey()?.textContent).toBe('Tab');
+      expect(tabKey()?.parentElement?.dataset.motion).toBe('intro');
     } finally {
       vi.useRealTimers();
     }

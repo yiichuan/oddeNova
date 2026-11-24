@@ -1,3 +1,6 @@
+import RouterProgressView, { ActionProcessHeader, RouterProcessView } from './RouterProgressView';
+import { groupRouterProcess, routerStageLabels, routerStrategySeconds } from './router-progress-display';
+import type { LiveRouterProgress } from '../../agent/progress';
 import MessageImages from './MessageImages';
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
@@ -469,6 +472,7 @@ export function UserMessageBubble({
 
 interface ConversationViewProps {
   messages: ChatMessage[];
+  liveRouterProgress?: LiveRouterProgress;
   pendingHumming?: PendingHummingSubmission | null;
   hummingWaveformToolCalled?: boolean;
   onCancelHumming?: () => void;
@@ -568,6 +572,7 @@ const DRAFT_DIFF_SETTLE_MS = 180;
 
 export default function ConversationView({
   messages: sessionMessages,
+  liveRouterProgress,
   pendingHumming,
   hummingWaveformToolCalled = false,
   onCancelHumming,
@@ -598,6 +603,7 @@ export default function ConversationView({
     : sessionMessages, [sessionMessages, pendingHumming]);
   const turnInProgress = isLoading || Boolean(pendingHumming);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const liveTailRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
   const prevIsLoadingRef = useRef(false);
   const prevHasDraftSegmentRef = useRef(false);
@@ -623,7 +629,7 @@ export default function ConversationView({
   }
   // In-flight programmatic smooth scroll (turn-start anchoring): its target
   // and a deadline after which it's considered interrupted/finished.
-  const autoScrollRef = useRef<{ target: number; until: number } | null>(null);
+  const autoScrollRef = useRef<{ target: number; until: number; turnStart: boolean; follow?: number } | null>(null);
   // When the reader last touched the scroll themselves (wheel, touch, or a
   // press that may be a scrollbar drag). Programmatic scrolls never set it, so
   // it is what separates "the reader moved this" from "the page moved under
@@ -801,6 +807,7 @@ export default function ConversationView({
       if (auto) {
         if (Math.abs(el.scrollTop - auto.target) < 2) {
           autoScrollRef.current = null; // animation arrived; don't mark manual
+          if (auto.follow !== undefined && !userScrolledRef.current) el.scrollTop = auto.follow;
           return;
         }
         if (performance.now() < auto.until) return;
@@ -808,7 +815,7 @@ export default function ConversationView({
       }
       const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       // The anchor is where the scroll effect holds the reading — the top of
-      // the current turn's user bubble in turn-anchor mode, the bottom pin
+      // the live tail or user bubble in turn-anchor mode, the bottom pin
       // otherwise. Deviation is measured from it in *either* direction: with a
       // user bubble taller than the viewport the anchor sits near the top, so
       // scrolling down past it to reach the reasoning window is as much a
@@ -944,9 +951,8 @@ export default function ConversationView({
   // (no flicker). Once a turn starts, the view anchors that turn's user bubble
   // to the top of the viewport via its layout offset (the turn filler
   // guarantees enough room below from the very first commit) and keeps
-  // anchoring there — through streaming, through the turn ending normally, and
-  // through interrupts — so stopping/retrying never re-pins to the bottom and
-  // yanks the bubble to a different position. Turn start animates there
+  // anchoring there until live Router output extends below the visible area.
+  // Then follow the output tail while the status row sticks at the top. Turn start animates there
   // smoothly — one continuous, natural glide; every commit after that keeps
   // the position without motion. Before the first turn (e.g. a freshly opened
   // past session) it falls back to pinning the bottom.
@@ -995,6 +1001,13 @@ export default function ConversationView({
       // full viewport for stable scroll range, but its inner window must not
       // fill all of that height: revealing that oversized window scrolls the
       // user bubble offscreen, then brings it back when reasoning ends.
+      const liveTail = liveTailRef.current;
+      if (liveTail && !turnJustStarted) {
+        const tailBottom = liveTail.getBoundingClientRect().bottom;
+        const viewportBottom = el.getBoundingClientRect().top + el.clientTop + el.clientHeight;
+        const revealTarget = el.scrollTop + tailBottom - viewportBottom + 16;
+        target = Math.max(target, Math.min(bottomPin, revealTarget));
+      }
       const preEl = reasoningScrollRef.current;
       if (preEl) {
         let reasoningTop = 0;
@@ -1045,8 +1058,12 @@ export default function ConversationView({
       if (!userScrolledRef.current) {
         const auto = autoScrollRef.current;
         if (turnJustStarted || draftJustAppeared) {
-          autoScrollRef.current = { target, until: performance.now() + 800 };
+          autoScrollRef.current = { target, until: performance.now() + 800, turnStart: turnJustStarted };
           el.scrollTo({ top: target, behavior: 'smooth' });
+        } else if (auto?.turnStart && liveTail && performance.now() < auto.until
+          && Math.abs(el.scrollTop - auto.target) >= 2) {
+          // Let the user bubble land before following any early output.
+          auto.follow = target;
         } else if (auto && performance.now() < auto.until && Math.abs(auto.target - target) <= 1) {
           // Let an intentional reveal finish while its destination is stable.
         } else {
@@ -1063,7 +1080,7 @@ export default function ConversationView({
       // streamed text is left where the reader put it, and the jump-to-latest
       // button below is what takes them to the live end when they want it.
     }
-  }, [messages, turnInProgress, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive, hasDraftSegment, reasoningCollapsed, reasoningViewportSize]);
+  }, [messages, turnInProgress, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive, hasDraftSegment, reasoningCollapsed, reasoningViewportSize, liveRouterProgress]);
 
   // Pre-process: attach each reasoning progress message to the next assistant message.
   const { absorbedReasoningIds } = useMemo(() => {
@@ -1189,10 +1206,10 @@ export default function ConversationView({
     // assistant summary that ends the turn.
     const durationSec = new Map<string, number>();
     for (let i = 0; i < messages.length; ) {
-      if (messages[i].role !== 'progress') { i++; continue; }
+      if (messages[i].role !== 'progress' || messages[i].routerProgress) { i++; continue; }
       let j = i;
       const run: ChatMessage[] = [];
-      while (j < messages.length && messages[j].role === 'progress') run.push(messages[j++]);
+      while (j < messages.length && messages[j].role === 'progress' && !messages[j].routerProgress) run.push(messages[j++]);
       const followedByAssistant = j < messages.length && messages[j].role === 'assistant';
       if (followedByAssistant && run.some(isVisible)) {
         const gid = run[0].id;
@@ -1307,7 +1324,18 @@ export default function ConversationView({
     ? lastMessage
     : undefined;
   const isSearchingSamples = liveStatus?.toolName === 'searchSamples';
-  const liveStatusLabel = isSearchingSamples ? t('searchingSamples') : liveStatus?.content ?? t('thinking');
+  const stage = liveRouterProgress?.stage;
+  const liveStatusLabel = liveRouterProgress?.operation
+    ?? (stage ? t(routerStageLabels[stage])
+      : isSearchingSamples ? t('searchingSamples') : liveStatus?.content ?? t('thinking'));
+  const liveReply = isLoading ? liveRouterProgress?.reply : undefined;
+  const liveReplyMessageId = liveReply
+    ? messages.findLast((message) => loadingTurnAssistantIds.has(message.id))?.id
+    : undefined;
+  const routerProcess = useMemo(
+    () => groupRouterProcess(messages, isLoading ? lastUserIndex : undefined),
+    [messages, isLoading, lastUserIndex],
+  );
   const sampleSearchSummary = isSearchingSamples ? liveStatus?.sampleSearchSummary : undefined;
 
   // Renders a single progress message's content (thinking narration, the
@@ -1413,6 +1441,35 @@ export default function ConversationView({
     );
   };
 
+  const loadingHeader = isLoading ? (
+    <div key="live-reply-heading" data-live-reply-heading
+      className="sticky top-0 z-20 flex items-start gap-1.5 bg-conversation-surface px-1.5">
+      <ThinkingLottieSuspense className="w-5 h-5 flex-shrink-0" />
+      <div className="min-w-0">
+        {reasoningWindowAvailable ? (
+          <button
+            data-live-reasoning-toggle
+            onClick={() => setReasoningCollapsed((v) => !v)}
+            aria-expanded={reasoningWindowExpanded}
+            className={`flex min-w-0 items-center gap-1.5 text-left ${bodyText} text-text-primary transition-colors hover:text-text-secondary`}
+            title={reasoningWindowExpanded ? t('collapseReasoning') : t('expandReasoning')}
+          >
+            <span data-live-reasoning-label className="min-w-0">{liveStatusLabel}</span>
+            <ChevronRightIcon
+              size={18}
+              className={`flex-shrink-0 transition-transform ${reasoningWindowExpanded ? 'rotate-90' : ''}`}
+            />
+          </button>
+        ) : (
+          <div role="status" className={`min-w-0 ${bodyText} text-text-primary`}>{liveStatusLabel}</div>
+        )}
+        {sampleSearchSummary && sampleSearchSummary.length > 0 && (
+          <SampleSearchSummary key={liveStatus?.id} items={sampleSearchSummary} />
+        )}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="conversation-scroll-shell">
       {/* isolate scopes the z-indexes used inside the stream (the reasoning
@@ -1470,9 +1527,23 @@ export default function ConversationView({
         </div>
       )}
 
+      {lastUserIndex < 0 && loadingHeader}
       {messages.map((msg, messageIndex) => {
         if (msg.isGreeting) return null;
         if (msg.role === 'progress') {
+          if (msg.routerProgress) {
+            const processId = routerProcess.groupOf.get(msg.id);
+            if (processId !== undefined) {
+              const process = routerProcess.groups.get(msg.id);
+              return process ? <RouterProcessView key={msg.id} id={msg.id} process={process}
+                expanded={expandedActions.has(msg.id)} onToggle={() => toggleActions(msg.id)}
+                markSize={markSize} formatDuration={formatThinkDuration} /> : null;
+            }
+            const duration = routerStrategySeconds(msg.routerProgress);
+            return <RouterProgressView key={msg.id} entry={msg.routerProgress}
+              live={isLoading && messageIndex > lastUserIndex}
+              durationLabel={duration === undefined ? undefined : formatThinkDuration(duration)} />;
+          }
           const gid = actionGroupOf.get(msg.id);
           if (gid) {
             // Part of a completed turn's "行动过程" group.
@@ -1491,23 +1562,8 @@ export default function ConversationView({
                 }}
               >
                 {isHeader && (
-                  <div className="px-2">
-                    <button
-                      data-action-process-toggle={gid}
-                      onClick={() => toggleActions(gid)}
-                      className="flex items-center gap-1.5 text-sm text-text-secondary/60 hover:text-text-secondary transition-colors"
-                    >
-                      <span>{t('actionsTitle')}</span>
-                      {actionGroupDurationSec.get(gid) != null && (
-                        <span>· {formatThinkDuration(actionGroupDurationSec.get(gid)!)}</span>
-                      )}
-                      <ChevronRightIcon
-                        size={markSize}
-                        className={`flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
-                      />
-                    </button>
-                    <div className="mt-2 border-b border-border/60" />
-                  </div>
+                  <ActionProcessHeader id={gid} expanded={expanded} onToggle={() => toggleActions(gid)}
+                    markSize={markSize} duration={formatThinkDuration(actionGroupDurationSec.get(gid)!)} />
                 )}
                 {content && <div className={isHeader ? 'mt-3' : ''}>{content}</div>}
               </div>
@@ -1603,7 +1659,7 @@ export default function ConversationView({
           : undefined;
         const previousMessage = messages[messageIndex - 1];
         const previousActionGroupId = previousMessage
-          ? actionGroupOf.get(previousMessage.id)
+          ? routerProcess.groupOf.get(previousMessage.id) ?? actionGroupOf.get(previousMessage.id)
           : undefined;
         const followsCollapsedActionGroup =
           previousActionGroupId !== undefined && !expandedActions.has(previousActionGroupId);
@@ -1629,7 +1685,8 @@ export default function ConversationView({
               followsCollapsedActionGroup ? 'pt-0' : 'pt-2'
             }`}>
               {analyzedHumming && <HummingAnalysisSummary humming={analyzedHumming} />}
-              <MarkdownText content={stepwiseChoice?.content ?? msg.content} />
+              <MarkdownText content={msg.id === liveReplyMessageId ? liveReply! : stepwiseChoice?.content ?? msg.content} />
+              {msg.id === liveReplyMessageId && <div ref={liveTailRef} data-live-reply-tail aria-hidden="true" />}
               {stepwiseChoice && messageIndex < lastUserIndex && (
                 <details className="mt-2 text-xs text-text-secondary">
                   <summary className="w-fit cursor-pointer rounded-sm py-1 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
@@ -1767,7 +1824,7 @@ export default function ConversationView({
             </div>
           </div>
         );
-      })}
+      }).flatMap((row, index) => index === lastUserIndex ? [row, loadingHeader] : [row])}
 
       {/* The manual edit, standing on its own at the end of the reading.
           Derived from the draft rather than stored in `messages`, which is what
@@ -1818,31 +1875,14 @@ export default function ConversationView({
           className="animate-fade-in flex flex-col"
           style={!isVideoMode ? { height: turnFillerHeight } : undefined}
         >
-          <div className="flex items-start gap-1.5 px-1.5 shrink-0">
-            <ThinkingLottieSuspense className="w-5 h-5 flex-shrink-0" />
-            <div className="min-w-0">
-              {reasoningWindowAvailable ? (
-                <button
-                  data-live-reasoning-toggle
-                  onClick={() => setReasoningCollapsed((v) => !v)}
-                  aria-expanded={reasoningWindowExpanded}
-                  className={`flex min-w-0 items-center gap-1.5 text-left ${bodyText} text-text-primary transition-colors hover:text-text-secondary`}
-                  title={reasoningWindowExpanded ? t('collapseReasoning') : t('expandReasoning')}
-                >
-                  <span data-live-reasoning-label className="min-w-0">{liveStatusLabel}</span>
-                  <ChevronRightIcon
-                    size={18}
-                    className={`flex-shrink-0 transition-transform ${reasoningWindowExpanded ? 'rotate-90' : ''}`}
-                  />
-                </button>
-              ) : (
-                <div className={`min-w-0 ${bodyText} text-text-primary`}>{liveStatusLabel}</div>
-              )}
-              {sampleSearchSummary && sampleSearchSummary.length > 0 && (
-                <SampleSearchSummary key={liveStatus?.id} items={sampleSearchSummary} />
-              )}
+          {liveReply && !liveReplyMessageId && (
+            <div className={`shrink-0 px-2 ${bodyText} text-text-primary`} data-live-router-reply>
+              <MarkdownText content={liveReply} />
             </div>
-          </div>
+          )}
+          {!liveReplyMessageId && (liveRouterProgress || (lastMessage?.routerProgress && messages.length - 1 > lastUserIndex)) && (
+            <div ref={liveTailRef} data-live-reply-tail aria-hidden="true" />
+          )}
           {reasoningWindowExpanded && streamingReasoningMsg && (
             // flex-1 (rather than a calc'd height) fills exactly whatever
             // room the fixed height above leaves after the indicator row.

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { AGENT_WORKFLOW_PATH, isLoopbackHost } from '../lib/routes';
 import './local-tools.css';
 
 type PromptVersions = { versions: string[]; active: string | null };
@@ -18,6 +19,11 @@ const tools = [
     description: '对照提示词版本，查看展开内容与源码。',
     href: '/local-tools/prompt-compare',
   },
+  ...(isLoopbackHost(window.location.hostname) ? [{
+    title: '双 Agent 工作流',
+    description: '发送真实测试消息，对照对话、路由决策和音乐执行记录。',
+    href: AGENT_WORKFLOW_PATH,
+  }] : []),
 ];
 
 export default function LocalToolsPage() {

@@ -4,6 +4,7 @@
 
 import { CommitSignal, findTool, type ToolContext, type ToolResult } from './tools';
 import { getErrorMessage } from '../lib/errors';
+import type { AgentTraceSink } from '../lib/agent-trace';
 
 export interface ToolCallRequest {
   id: string;
@@ -20,7 +21,8 @@ export interface ToolCallOutcome {
 export async function dispatchToolCall(
   call: ToolCallRequest,
   ctx: ToolContext,
-  maxRetries = 2
+  maxRetries = 2,
+  trace?: AgentTraceSink,
 ): Promise<ToolCallOutcome> {
   const tool = findTool(call.name);
   if (!tool) {
@@ -68,6 +70,10 @@ export async function dispatchToolCall(
     } catch (e: unknown) {
       if (e instanceof CommitSignal) throw e;
       lastError = getErrorMessage(e);
+      if (attempt < maxRetries) {
+        trace?.({ from: 'tool', to: 'session', label: '重试工具 · ' + call.name, failed: true,
+          data: { callId: call.id, failedAttempt: attempt + 1, nextAttempt: attempt + 2, error: lastError } });
+      }
       console.error(`[executor] ✗ tool "${call.name}" threw (attempt ${attempt}):`, lastError);
     }
   }

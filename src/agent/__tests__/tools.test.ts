@@ -213,7 +213,26 @@ stack(
   });
 });
 
+describe('reportArrangement', () => {
+  it('returns the plan and the musical decisions as separate internal events', async () => {
+    const reportSession = vi.fn();
+    const ctx = { ...makeCtx(''), reportSession };
+    expect(await getHandler('reportArrangement')({ plan: 'Check the motif', strategy: 'Keep the melody on piano' }, ctx)).toEqual({ ok: true });
+    expect(reportSession.mock.calls).toEqual([
+      [{ kind: 'plan', facts: { nextStep: 'Check the motif' } }],
+      [{ kind: 'strategy', facts: { musicalDecisions: 'Keep the melody on piano' } }],
+    ]);
+  });
+});
+
 describe('setCode', () => {
+  it('reports an out-of-scope candidate and keeps the previous tool state', async () => {
+    const ctx = { ...makeCtx('s("bd")'), validateScope: () => false };
+    const result = await getHandler('setCode')({ code: 's("hh")' }, ctx);
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('authorized edit scope') });
+    expect(ctx.state.code).toBe('s("bd")');
+  });
+
   const setCode = getHandler('setCode');
 
   const FULL_CODE = `setcps(0.5)
@@ -289,6 +308,13 @@ stack(
 });
 
 describe('commit', () => {
+  it('does not commit a normalized candidate rejected by the scope validator', async () => {
+    const ctx = { ...makeCtx('s("bd")'), validateScope: () => false };
+    await expect(getHandler('commit')({}, ctx)).resolves.toMatchObject({
+      ok: false, error: expect.stringContaining('authorized edit scope'),
+    });
+  });
+
   const commit = getHandler('commit');
 
   it('当前状态代码语法错误时返回失败，不提交', async () => {

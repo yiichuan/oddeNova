@@ -1,6 +1,7 @@
 /** Path routing shared by every entry; no UI, audio or storage dependencies. */
 export const LEARN_PATH_PREFIX = '/learn';
 export const LOCAL_TOOLS_PATH = '/local-tools';
+export const AGENT_WORKFLOW_PATH = LOCAL_TOOLS_PATH + '/agent-workflow';
 
 /** True for the tutorial entry's own path space. Reads the current page by default. */
 export function isLearnPath(pathname: string = window.location.pathname): boolean {
@@ -19,4 +20,12 @@ export function isLocalToolsPath(pathname: string = window.location.pathname): b
 export function isPromptComparePath(pathname: string = window.location.pathname): boolean {
   return pathname === `${LOCAL_TOOLS_PATH}/prompt-compare`
     || pathname === `${LOCAL_TOOLS_PATH}/prompt-compare/`;
+}
+
+export function isAgentWorkflowPath(pathname: string = window.location.pathname): boolean {
+  return pathname === AGENT_WORKFLOW_PATH || pathname === AGENT_WORKFLOW_PATH + '/';
+}
+
+export function isLoopbackHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
 }

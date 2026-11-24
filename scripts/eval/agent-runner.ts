@@ -3,6 +3,7 @@
 // 内联所有 parser / tools / Anthropic 调用逻辑，避免引入浏览器端依赖。
 
 import Anthropic from '@anthropic-ai/sdk';
+import type { LLMCaller } from '../../src/agent/loop.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +40,32 @@ const client = new Anthropic({
   dangerouslyAllowBrowser: true,
   defaultHeaders: { Authorization: `Bearer ${ANTHROPIC_API_KEY}` },
 });
+
+export const routerEvalCaller: LLMCaller = {
+  async chatWithTools(messages, tools, _onTextDelta, _onReasoningDelta, signal) {
+    const system = messages.filter(message => message.role === 'system').map(message => String(message.content)).join('\n');
+    const conversation = messages.flatMap(message => message.role === 'user' || message.role === 'assistant'
+      ? [{ role: message.role, content: String(message.content) }]
+      : []);
+    const response = await client.messages.create({
+      model: ANTHROPIC_MODEL,
+      system,
+      messages: conversation,
+      max_tokens: 2048,
+      tools: tools.map(({ function: tool }) => ({
+        name: tool.name,
+        description: tool.description,
+        input_schema: tool.parameters as Anthropic.Tool.InputSchema,
+      })),
+    }, { signal });
+    return {
+      content: response.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(''),
+      toolCalls: response.content.flatMap(block => block.type === 'tool_use' ? [{
+        id: block.id, name: block.name, arguments: JSON.stringify(block.input),
+      }] : []),
+    };
+  },
+};
 
 // ============================================================================
 // 内联 parser.ts 的核心逻辑（完整复制自 scripts/run-agent-testcases.ts）

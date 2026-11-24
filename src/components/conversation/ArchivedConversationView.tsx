@@ -1,3 +1,5 @@
+import { RouterProcessView } from './RouterProgressView';
+import { groupRouterProcess } from './router-progress-display';
 import MessageImages from './MessageImages';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
@@ -6,7 +8,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { t } from '../../lib/i18n';
 import { takeLabel } from '../../lib/favorite-conversations';
 import { ChevronRightIcon, PlayIcon, StopIcon } from '../icons';
-import { MarkdownText, MessageHummingCards, UserMessageBubble } from './ConversationView';
+import { formatThinkDuration, MarkdownText, MessageHummingCards, UserMessageBubble } from './ConversationView';
 import { useScrollActivity } from '../../hooks/useScrollActivity';
 
 /** How long the bar stays up after the last scroll, in ms — the mobile code
@@ -231,11 +233,13 @@ export default function ArchivedConversationView({
     });
     return ids;
   }, [messages]);
+  const routerProcess = useMemo(() => groupRouterProcess(messages), [messages]);
   const visibleMessages = useMemo(
     () => messages.filter((message) => (
       message.role !== 'progress' || arrangeReasoningIds.has(message.id)
+      || routerProcess.groups.has(message.id)
     )),
-    [messages, arrangeReasoningIds],
+    [messages, arrangeReasoningIds, routerProcess],
   );
 
   /* A favorite opens at its end. What was kept is the take the exchange
@@ -418,6 +422,10 @@ export default function ArchivedConversationView({
              belongs on the vertical is the bubble's own. */
           const isFirst = index === 0;
           const isLast = index === visibleMessages.length - 1;
+          const process = routerProcess.groups.get(message.id);
+          if (process) return <RouterProcessView key={message.id} id={message.id} process={process}
+            expanded={expandedReasoning.has(message.id)} onToggle={() => toggleReasoning(message.id)}
+            markSize={markSize} formatDuration={formatThinkDuration} />;
           if (message.role === 'progress') {
             const expanded = expandedReasoning.has(message.id);
             return (

@@ -548,3 +548,135 @@ describe('useAgentRunner production adapter', () => {
     );
   });
 });
+
+describe('routed turns', () => {
+  function makeRouter(over: Partial<NonNullable<AgentTurnDeps['router']>> = {}): NonNullable<AgentTurnDeps['router']> {
+    return {
+      run: vi.fn().mockResolvedValue({ kind: 'execute', scope: { kind: 'rewrite' }, status: 'candidate', result: makeResult() }),
+      snapshot: () => ({ id: 'S1', title: 'Song', messages: [], code: 'CURRENT', createdAt: 0, updatedAt: 0 }),
+      commit: vi.fn(async (_commit, canCommit) => canCommit() ? 'revision-1' : null),
+      updateReceipt: vi.fn(),
+      flushLocalWrites: vi.fn(async () => undefined),
+      getLiveEditorCode: () => 'CURRENT',
+      setEditorCode: vi.fn(),
+      ...over,
+    };
+  }
+
+  function makeRoutedDeps(router: NonNullable<AgentTurnDeps['router']>, over: Partial<AgentTurnDeps> = {}) {
+    return makeDeps({ router, addUserMessage: vi.fn(() => ({ id: 'message-1', isFirstUserMessage: false })), ...over });
+  }
+
+  it('stores the original once and accepts exactly one Router reply', async () => {
+    const router = makeRouter({ run: vi.fn().mockResolvedValue({ kind: 'reply', route: 'reply', text: 'Hi' }) });
+    const deps = makeRoutedDeps(router);
+    await runAgentTurn(makeInput({ text: 'Hello' }), deps);
+    expect(deps.addUserMessage).toHaveBeenCalledOnce();
+    expect(deps.addUserMessage).toHaveBeenCalledWith('Hello');
+    expect(router.run).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'Hello', ref: expect.objectContaining({ sessionId: 'S1', messageId: 'message-1' }),
+    }));
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledOnce();
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith('Hi', 'S1', expect.any(String));
+    expect(router.commit).not.toHaveBeenCalled();
+    expect(deps.play).not.toHaveBeenCalled();
+    expect(deps.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('publishes only Router statuses and a standard receipt, including for the mood entry', async () => {
+    const onProgress = vi.fn();
+    const run: NonNullable<AgentTurnDeps['router']>['run'] = vi.fn(async request => {
+      request.onProgress?.({ kind: 'router_progress', entry: { kind: 'plan', title: 'Review the score' } });
+      request.onProgress?.({ kind: 'reasoning_delta', delta: 'private reasoning' });
+      request.onProgress?.({ kind: 'assistant_text_delta', delta: 'private narration' });
+      request.onProgress?.({ kind: 'assistant_text', text: 'private working text' });
+      request.onProgress?.({ kind: 'assistant_reply_delta', delta: 'private reply' });
+      request.onProgress?.({ kind: 'warn', message: 'private error' });
+      request.onProgress?.({ kind: 'tool_call', name: 'validate', args: { code: 'private code' } });
+      return { kind: 'execute', scope: { kind: 'rewrite' }, status: 'candidate',
+        result: makeResult({ explanation: 'private commit note' }) } as const;
+    });
+    const router = makeRouter({ run });
+    const deps = makeRoutedDeps(router, { makeProgressHandler: () => onProgress });
+    await runAgentTurn(makeInput({ entryPoint: 'mood', moodContext: 'context', includeHistory: false }), deps);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ entryPoint: 'mood', moodContext: 'context' }));
+    expect(deps.runAgent).not.toHaveBeenCalled();
+    expect(onProgress.mock.calls).toEqual([
+      [{ kind: 'router_progress', entry: { kind: 'plan', title: 'Review the score' } }],
+    ]);
+    expect(router.commit).toHaveBeenCalledWith(expect.objectContaining({ summary: t('agentRevisionSaved') }), expect.any(Function));
+    expect(router.updateReceipt).toHaveBeenCalledWith('S1', 'revision-1', 'played', t('agentRevisionSaved'));
+  });
+
+  it('never saves or plays an out-of-scope candidate', async () => {
+    const router = makeRouter({ run: vi.fn().mockResolvedValue({
+      kind: 'execute', scope: { kind: 'parameter', targets: ['layer-1'], parameter: 'gain' },
+      status: 'scope_conflict', result: makeResult(),
+    }) });
+    const deps = makeRoutedDeps(router);
+    await runAgentTurn(makeInput(), deps);
+    expect(router.commit).not.toHaveBeenCalled();
+    expect(deps.play).not.toHaveBeenCalled();
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(t('agentRouterScopeConflict'), 'S1', expect.any(String));
+  });
+
+  it('keeps the last revision when the Session candidate fails validation', async () => {
+    const router = makeRouter({ run: vi.fn().mockResolvedValue({
+      kind: 'execute', scope: { kind: 'rewrite' }, status: 'failed', result: makeResult({ committed: false, terminationReason: 'validation_failed' }),
+    }) });
+    const deps = makeRoutedDeps(router);
+    await runAgentTurn(makeInput(), deps);
+    expect(router.commit).not.toHaveBeenCalled();
+    expect(deps.setCurrentCode).not.toHaveBeenCalled();
+    expect(deps.play).not.toHaveBeenCalled();
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledOnce();
+  });
+
+  it('retains the saved revision and reports playback failure when synthesis fails', async () => {
+    const synthesize = vi.fn().mockRejectedValue(new Error('network'));
+    const router = makeRouter({ run: vi.fn().mockResolvedValue({ kind: 'execute', scope: { kind: 'rewrite' }, status: 'candidate', result: makeResult(), synthesize }) });
+    const deps = makeRoutedDeps(router, { play: vi.fn(async () => false) });
+    await runAgentTurn(makeInput(), deps);
+    expect(router.commit).toHaveBeenCalledOnce();
+    expect(router.updateReceipt).toHaveBeenCalledOnce();
+    expect(router.updateReceipt).toHaveBeenCalledWith('S1', 'revision-1', 'failed',
+      t('agentRevisionSaved') + '\n\n' + t('agentRevisionPlaybackFailed'));
+    expect(synthesize).toHaveBeenCalledWith(expect.objectContaining({ revisionId: 'revision-1', playback: 'failed' }));
+    expect(deps.finalizeLastAssistantMessage).not.toHaveBeenCalled();
+  });
+
+  it('saves background revisions without touching the active editor or playing', async () => {
+    const router = makeRouter();
+    const deps = makeRoutedDeps(router, { isCurrentSession: () => false });
+    await runAgentTurn(makeInput(), deps);
+    expect(router.commit).toHaveBeenCalledOnce();
+    expect(router.updateReceipt).toHaveBeenCalledOnce();
+    expect(router.updateReceipt).toHaveBeenCalledWith('S1', 'revision-1', 'not_attempted', t('agentRevisionSaved'));
+    expect(router.setEditorCode).not.toHaveBeenCalled();
+    expect(deps.play).not.toHaveBeenCalled();
+  });
+
+  it('rejects a revision when the editor changes during generation', async () => {
+    const getLiveEditorCode = vi.fn().mockReturnValueOnce('CURRENT').mockReturnValue('edited');
+    const router = makeRouter({ getLiveEditorCode });
+    const deps = makeRoutedDeps(router);
+    await runAgentTurn(makeInput(), deps);
+    expect(router.updateReceipt).not.toHaveBeenCalled();
+    expect(deps.play).not.toHaveBeenCalled();
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledOnce();
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(
+      t('agentRevisionStale'), 'S1', expect.any(String),
+    );
+  });
+
+  it('keeps the receipt when cancelled after commit and avoids playback', async () => {
+    const controller = new AbortController();
+    const router = makeRouter({ flushLocalWrites: async () => controller.abort() });
+    const deps = makeRoutedDeps(router, { beginLoading: () => controller });
+    await runAgentTurn(makeInput(), deps);
+    expect(router.updateReceipt).toHaveBeenCalledOnce();
+    expect(router.updateReceipt).toHaveBeenCalledWith('S1', 'revision-1', 'not_attempted', t('agentRevisionSaved'));
+    expect(router.setEditorCode).toHaveBeenCalledWith('note("c3")');
+    expect(deps.play).not.toHaveBeenCalled();
+  });
+});

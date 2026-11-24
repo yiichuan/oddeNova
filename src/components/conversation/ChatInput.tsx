@@ -347,7 +347,7 @@ export default function ChatInput({
   // Fade-out phase between dwell and the next suggestion (blur + opacity).
   const [suggestionFading, setSuggestionFading] = useState(false);
   const [keyHintFor, setKeyHintFor] = useState<{ index: number; text: string } | null>(null);
-  const [hoveredTabFor, setHoveredTabFor] = useState<typeof keyHintFor>(null);
+  const [tabInteraction, setTabInteraction] = useState<(NonNullable<typeof keyHintFor> & { hovering: boolean }) | null>(null);
   const suggestionList = showStepwiseChoices || inputMode === 'choice' || presetLock || guided
     ? []
     : moodSuggestionActive
@@ -356,8 +356,9 @@ export default function ChatInput({
   const currentSuggestion = suggestionList.length > 0 ? suggestionList[suggestionIdx % suggestionList.length] : null;
   const suggestionActive =
     currentSuggestion !== null && text === '' && !voiceBusy && replayValue === undefined && !isLoading && !isVideoMode && !moodPending;
-  const tabHintHovered = suggestionActive && !isMobile && hoveredTabFor !== null
-    && hoveredTabFor.index === suggestionIdx && hoveredTabFor.text === currentSuggestion;
+  const tabHintInteracted = !isMobile && tabInteraction !== null
+    && tabInteraction.index === suggestionIdx && tabInteraction.text === currentSuggestion;
+  const tabHintHovered = suggestionActive && tabHintInteracted && tabInteraction.hovering;
   const tabHintTooltipRef = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
     const tooltip = tabHintTooltipRef.current;
@@ -568,7 +569,7 @@ export default function ChatInput({
   const adoptSuggestion = () => {
     if (suggestionActive && currentSuggestion) {
       adoptedSuggestionRef.current = currentSuggestion;
-      setHoveredTabFor(null);
+      setTabInteraction(null);
       setText(currentSuggestion);
     }
   };
@@ -858,7 +859,7 @@ export default function ChatInput({
               value={displayedText}
               onChange={replayValue !== undefined || presetLock ? undefined : (e) => {
                 adoptedSuggestionRef.current = null;
-                setHoveredTabFor(null);
+                setTabInteraction(null);
                 setText(e.target.value);
               }}
               readOnly={replayValue !== undefined || presetLock !== undefined || voiceBusy}
@@ -951,12 +952,14 @@ export default function ChatInput({
                       key={suggestionIdx}
                       className="chat-suggestion-key"
                       aria-hidden="true"
-                      data-hovered={tabHintHovered}
+                      data-motion={tabHintHovered ? 'hover' : tabHintInteracted ? 'rest' : 'intro'}
                       onMouseEnter={isMobile ? undefined : () => {
-                        setHoveredTabFor(keyHintFor);
+                        setTabInteraction({ index: suggestionIdx, text: typedPlaceholder, hovering: true });
                         setSuggestionFading(false);
                       }}
-                      onMouseLeave={isMobile ? undefined : () => setHoveredTabFor(null)}
+                      onMouseLeave={isMobile ? undefined : () => {
+                        setTabInteraction({ index: suggestionIdx, text: typedPlaceholder, hovering: false });
+                      }}
                     >
                       <kbd className="chat-suggestion-key-cap">
                         <span className="text-text-primary">{isMobile ? '⏎' : 'Tab'}</span>

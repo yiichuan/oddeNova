@@ -18,6 +18,7 @@ import {
   applyRefreshEmptySessionForReuse,
   applyTruncate,
   applyTruncateAndEdit,
+  recoverInterruptedAgentTurn,
   useSessions,
 } from '../useSessions';
 import type { Session } from '../useSessions';
@@ -129,8 +130,86 @@ async function renderUseSessions(options?: Parameters<typeof useSessions>[0]): P
   };
 }
 
+describe('routed turn recovery', () => {
+  it('restores an interrupted reply once and preserves existing completed replies', () => {
+    const session = makeSession({
+      pendingAgentMessageId: 'user-1',
+      messages: [
+        { id: 'user-1', role: 'user', content: '改一下鼓', timestamp: 10 },
+        { id: 'tool-1', role: 'progress', content: 'working', timestamp: 11 },
+      ],
+    });
+    const recovered = recoverInterruptedAgentTurn(session);
+    expect(recovered.messages.at(-1)).toMatchObject({ role: 'assistant', content: t('agentTurnRecovered') });
+    expect(recoverInterruptedAgentTurn(recovered)).toBe(recovered);
+    const completed = { ...session, messages: [...session.messages, {
+      id: 'reply-1', role: 'assistant' as const, content: 'Done', timestamp: 12,
+    }] };
+    expect(recoverInterruptedAgentTurn(completed).messages).toEqual(completed.messages);
+  });
+});
+
 describe('useSessions', () => {
   const roots: Root[] = [];
+
+  it('keeps diagnostic conversations in memory and skips the saved session list', async () => {
+    const { root, getHook } = await renderUseSessions({ ownerKey: 'agent-workflow:test', inMemory: true });
+    roots.push(root);
+    const sessionId = getHook().currentId;
+    const reads = storageMocks.getAllSessions.mock.calls.length;
+    const writes = storageMocks.putSession.mock.calls.length;
+    expect(getHook().currentSession?.messages.every(message => message.isGreeting)).toBe(true);
+    await act(async () => { getHook().addUserMessage('diagnostic input'); });
+    expect(getHook().currentSession?.messages.at(-1)?.content).toBe('diagnostic input');
+    expect(getHook().currentId).toBe(sessionId);
+    expect(storageMocks.getAllSessions).toHaveBeenCalledTimes(reads);
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(writes);
+  });
+
+  it('commits one revision, receipt and code together and ignores duplicate or stale writes', async () => {
+    const session = makeSession({
+      code: 's("bd")',
+      messages: [{ id: 'user-1', role: 'user', content: 'Quieter drums', timestamp: 1 }],
+    });
+    storageMocks.getAllSessions.mockResolvedValue([session]);
+    storageMocks.getCurrentSessionId.mockResolvedValue(session.id);
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const commit = {
+      ref: { sessionId: session.id, messageId: 'user-1', turnId: 'turn-1' },
+      expectedCode: session.code,
+      beforeCode: session.code,
+      code: 's("bd").gain(0.5)',
+      summary: 'Lowered the kick',
+      inputMode: 'normal' as const,
+      suggestions: ['Add bass'],
+    };
+    await act(async () => { getHook().markAgentTurnPending(commit.ref); });
+    let pending!: Promise<string | null>;
+    await act(async () => { pending = getHook().commitAgentRevision(commit, () => true); });
+    await expect(pending).resolves.toBe('rev-turn-1');
+    expect(getHook().currentSession).toMatchObject({
+      code: commit.code,
+      pendingAgentMessageId: undefined,
+      revisions: [{ id: 'rev-turn-1', playbackStatus: 'not_attempted' }],
+      suggestions: { forCode: commit.code, items: commit.suggestions },
+    });
+    const persisted = storageMocks.putSession.mock.calls.at(-1)?.[0];
+    expect(persisted?.messages.at(-1)).toMatchObject({ role: 'assistant', revisionId: 'rev-turn-1' });
+    expect(persisted?.code).toBe(commit.code);
+
+    let stale!: Promise<string | null>;
+    await act(async () => {
+      pending = getHook().commitAgentRevision(commit, () => true);
+      stale = getHook().commitAgentRevision({ ...commit, ref: { ...commit.ref, turnId: 'turn-2' } }, () => true);
+      getHook().updateAgentReceipt(session.id, 'rev-turn-1', 'failed', 'Saved, playback failed');
+    });
+    await expect(pending).resolves.toBeNull();
+    await expect(stale).resolves.toBeNull();
+    expect(getHook().currentSession?.revisions).toEqual([expect.objectContaining({ id: 'rev-turn-1', playbackStatus: 'failed' })]);
+    expect(getHook().currentSession?.messages).toHaveLength(2);
+    expect(getHook().currentSession?.messages.at(-1)?.content).toBe('Saved, playback failed');
+  });
 
   beforeEach(() => {
     storageMocks.openDB.mockResolvedValue(undefined);

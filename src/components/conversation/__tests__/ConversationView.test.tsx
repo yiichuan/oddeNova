@@ -50,6 +50,7 @@ type PlaybackProps = {
   /** Overrides the helper's own, so one render can run a turn and the next end
    *  it — which is what arms the turn anchor. */
   isLoading?: boolean;
+  liveRouterProgress?: React.ComponentProps<typeof ConversationView>['liveRouterProgress'];
   /** Which key started what is sounding, and the code it put on. */
   pressedSegmentId?: string | null;
   pressedSegmentCode?: string | null;
@@ -122,6 +123,104 @@ function renderConversationView(
 
   return { container, root, render };
 }
+
+it('groups completed Router progress under Process and puts code tools under Completion', () => {
+  setMobileViewport(false);
+  const user: ChatMessage = { id: 'u', role: 'user', content: 'Arrange this', timestamp: 1 };
+  const progress = (id: string, entry: NonNullable<ChatMessage['routerProgress']>): ChatMessage => ({
+    id, role: 'progress', progressKind: 'router_progress', content: entry.title, routerProgress: entry, timestamp: 2,
+  });
+  const messages = [
+    user,
+    progress('p', { kind: 'plan', title: 'I’ll listen first' }),
+    progress('t', { kind: 'tool', title: 'Reading the waveform', detail: 'Detected five notes' }),
+    progress('s', { kind: 'strategy', title: 'Strategy', detail: 'Use piano for clarity', durationMs: 3200 }),
+    progress('o1', { kind: 'operation', title: 'Writing drums', detail: 'Sparse kick on the downbeat' }),
+    progress('o2', { kind: 'operation', title: 'Writing piano', detail: 'Long release connects the chords' }),
+    progress('v', { kind: 'tool', toolAction: 'validate', title: 'Testing syntax', detail: 'Syntax passed' }),
+    progress('c', { kind: 'tool', title: '提交编曲', detail: 'The candidate was sent' }),
+  ];
+  const { container, root, render } = renderConversationView(messages, vi.fn(), true, undefined, {
+    liveRouterProgress: { stage: 'humming' },
+  });
+  try {
+    const heading = container.querySelector('[data-live-reply-heading]')!;
+    const plan = container.querySelector('[data-router-progress="plan"]')!;
+    const processButton = () => container.querySelector<HTMLButtonElement>('[data-action-process-toggle]');
+    const disclosure = (kind: string) => container.querySelector<HTMLDetailsElement>(`details[data-router-progress="${kind}"]`);
+    expect(heading.textContent).toContain(t('routerStageHumming'));
+    expect(heading.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(plan.textContent).toContain('I’ll listen first');
+    for (const kind of ['tool', 'strategy']) expect(disclosure(kind)?.open).toBe(true);
+    expect(disclosure('strategy')?.querySelector('summary')?.textContent).toContain('3s');
+    expect(disclosure('arrangement')).toBeNull();
+    expect(processButton()).toBeNull();
+
+    render({ isLoading: true, liveRouterProgress: { operation: 'Writing piano', reply: 'Here is' } });
+    expect(container.querySelector('[data-live-reply-heading]')).toBe(heading);
+    expect(heading.textContent).toContain('Writing piano');
+    expect(container.querySelector('[data-router-progress="operation"]')?.textContent).toBe('Sparse kick on the downbeat');
+    expect(container.querySelector('[data-live-router-reply]')?.textContent).toContain('Here is');
+
+    render({ isLoading: false }, [...messages, { id: 'done', role: 'assistant', content: 'Here is your piece.', timestamp: 3 }]);
+    expect(container.querySelector('[data-live-reply-heading]')).toBeNull();
+    expect(container.querySelectorAll('[data-router-progress="operation"]')).toHaveLength(0);
+    expect(processButton()?.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('[data-router-progress]')).toBeNull();
+    act(() => processButton()?.click());
+    for (const kind of ['tool', 'strategy', 'arrangement', 'completion']) expect(disclosure(kind)?.open).toBe(false);
+    expect(container.querySelectorAll('details[data-router-progress="tool"]')).toHaveLength(1);
+    expect(disclosure('completion')?.querySelectorAll('li')).toHaveLength(2);
+    expect(disclosure('completion')?.textContent).toContain('Syntax passed');
+    expect(disclosure('arrangement')?.querySelectorAll('li')).toHaveLength(2);
+    expect(container.querySelector('[data-router-progress="plan"]')?.textContent).toContain('I’ll listen first');
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
+});
+
+it('anchors the new user bubble before following overflowing Router text', () => {
+  setMobileViewport(false);
+  const user: ChatMessage = { id: 'u', role: 'user', content: 'Arrange this', timestamp: 1 };
+  const { container, root, render } = renderConversationView([user]);
+  try {
+    const box = container.querySelector<HTMLDivElement>('.conversation-scroll')!;
+    const bubble = container.querySelector<HTMLElement>('[data-rollback-bubble="u"]')!;
+    Object.defineProperties(box, {
+      clientHeight: { configurable: true, value: 500 },
+      scrollHeight: { configurable: true, value: 1500 },
+    });
+    Object.defineProperties(bubble, {
+      offsetParent: { configurable: true, value: box },
+      offsetTop: { configurable: true, value: 200 },
+    });
+    const scrollTo = vi.fn();
+    box.scrollTo = scrollTo;
+    box.scrollTop = 0;
+    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: 'First line' } });
+    expect(scrollTo).toHaveBeenCalledWith({ top: 200, behavior: 'smooth' });
+    const header = container.querySelector('[data-live-reply-heading]')!;
+    const tail = container.querySelector<HTMLElement>('[data-live-reply-tail]')!;
+    let bottom = 850;
+    stubRect(tail, () => ({ top: bottom - box.scrollTop, bottom: bottom - box.scrollTop }));
+    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: 'First line and more' } });
+    expect(box.scrollTop).toBe(0);
+    act(() => {
+      box.scrollTop = 200;
+      box.dispatchEvent(new Event('scroll'));
+    });
+    expect(box.scrollTop).toBe(366);
+    bottom = 1000;
+    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: 'Latest line' } });
+    expect(box.scrollTop).toBe(516);
+    expect(container.querySelector('[data-live-reply-heading]')).toBe(header);
+    expect(header.classList.contains('sticky')).toBe(true);
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
+});
 
 describe('ConversationView code revisions', () => {
   const roots: Root[] = [];

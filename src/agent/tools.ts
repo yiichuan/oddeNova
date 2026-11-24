@@ -5,6 +5,7 @@
 
 import { FEATURE_OPTIONS } from '../lib/sample-search';
 import { parseSampleSearchInput, DEFAULT_SAMPLE_LIMIT, type SampleBatchQuery, type SampleSearchResult } from '../lib/sample-search-batch';
+import type { SessionProgress } from './progress';
 import { parseScore } from './parser';
 import { validateCodeRuntime, validateCodeTranspiler, normalizeCode } from '../services/strudel';
 import { buildHummingTurnReport, hasHummingWaveformReport } from '../lib/humming-context';
@@ -18,6 +19,8 @@ export interface AgentState {
 
 export interface ToolContext {
   state: AgentState;
+  reportSession?: (entry: SessionProgress) => void;
+  validateScope?: (candidate: string) => boolean;
   isZh?: boolean;
   humming?: HummingAttachment;
   sampleSearch?: (input: SampleBatchQuery) => Promise<SampleSearchResult[]>;
@@ -168,6 +171,26 @@ function sampleSearchParameters(isZh: boolean) {
 
 export const TOOLS: ToolDef[] = [
   {
+    name: 'reportArrangement',
+    description: 'Report an actual next step or a concise summary of musical decisions to Router.',
+    parameters: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        plan: { type: 'string', description: 'What you are about to do.' },
+        strategy: { type: 'string', description: 'Chosen instrumentation, tonality, form or structural trade-offs. Summarize decisions and reasons.' },
+      },
+    },
+    handler: (args, ctx) => {
+      if (!ctx.reportSession) return { ok: false, error: 'Progress reporting is unavailable.' };
+      const plan = typeof args.plan === 'string' ? args.plan.trim().slice(0, 900) : '';
+      const strategy = typeof args.strategy === 'string' ? args.strategy.trim().slice(0, 1800) : '';
+      if (!plan && !strategy) return { ok: false, error: 'Provide a plan or musical decision summary.' };
+      if (plan) ctx.reportSession({ kind: 'plan', facts: { nextStep: plan } });
+      if (strategy) ctx.reportSession({ kind: 'strategy', facts: { musicalDecisions: strategy } });
+      return { ok: true };
+    },
+  },
+  {
     name: 'searchSamples',
     description: '按声部类别和听感批量查找内置采样，一次检索多组已确定需求，结果按 id 分组。新增或替换已标注库音色前使用；同需求结果可复用，需后续判断的需求可补查。目录类别优先；听感是软参考。',
     parameters: sampleSearchParameters(true),
@@ -264,7 +287,10 @@ export const TOOLS: ToolDef[] = [
       // Rewrite MIDI-standard GM names (e.g. gm_acoustic_grand_piano) to strudel's
       // canonical names (gm_piano) so the stored/validated/committed code stays
       // portable to vanilla strudel — oddeNova's runtime aliases are only a fallback.
-      const code = normalizeGmSampleNames(args.code.trim());
+      const code = normalizeGmSampleNames(ctx.validateScope ? args.code : args.code.trim());
+      if (ctx.validateScope && !ctx.validateScope(code)) return {
+        ok: false, error: 'Candidate exceeds the authorized edit scope. Preserve the baseline outside the assigned targets.',
+      };
       const score = parseScore(code);
       ctx.state.code = code;
       return {
@@ -322,7 +348,11 @@ export const TOOLS: ToolDef[] = [
       // Always use the tool-managed state.code — never let the LLM pass its own
       // code blob, which would bypass setcps and other accumulated edits.
       // Normalize multiline strings so Strudel's evaluator doesn't choke.
-      throw new CommitSignal(normalizeCode(ctx.state.code));
+      const normalized = normalizeCode(ctx.state.code);
+      if (ctx.validateScope && !ctx.validateScope(normalized)) return {
+        ok: false, error: 'Final code exceeds the authorized edit scope.',
+      };
+      throw new CommitSignal(normalized);
     },
   },
 ];
@@ -394,22 +424,27 @@ const TOOL_SCHEMAS_EN = {
 };
 
 // OpenAI ChatCompletion `tools` array.
-export function getOpenAIToolSchemas(isZh = true, hasHummingWaveform = false): Array<{
+export function getOpenAIToolSchemas(isZh = true, hasHummingWaveform = false, delegatedExecution = false): Array<{
   type: 'function';
   function: { name: string; description: string; parameters: Record<string, unknown> };
 }> {
   const schemas = isZh ? TOOL_SCHEMAS_ZH : TOOL_SCHEMAS_EN;
-  return TOOLS.filter(tool => hasHummingWaveform || tool.name !== 'analyzeHummingWaveform').map((t) => {
+  return TOOLS.filter(tool => (hasHummingWaveform || tool.name !== 'analyzeHummingWaveform')
+    && (delegatedExecution || tool.name !== 'reportArrangement')).map((t) => {
+    if (t.name === 'reportArrangement') return { type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } };
     const s = schemas[t.name as keyof typeof schemas];
     const baseParameters = t.name === 'searchSamples' ? sampleSearchParameters(isZh) : t.parameters;
     // Merge bilingual param descriptions into a copy of the original parameters schema.
+    const properties = (baseParameters as { properties: Record<string, { type: string; description?: string }> }).properties;
     const parameters = {
       ...baseParameters,
-      properties: Object.fromEntries(
-        Object.entries((baseParameters as { properties: Record<string, { type: string; description?: string }> }).properties).map(
-          ([key, val]) => [key, { ...val, description: s.params[key as keyof typeof s.params] ?? val.description }]
-        )
-      ),
+      properties: Object.fromEntries(Object.entries(properties).map(([key, val]) => {
+        const internal = delegatedExecution && key === 'explanation' && (t.name === 'setCode' || t.name === 'commit');
+        const description = internal
+          ? isZh ? '简要记录实际实施细节，供 Router 核对。' : 'Brief factual implementation notes for Router.'
+          : s.params[key as keyof typeof s.params] ?? val.description;
+        return [key, { ...val, description }];
+      })),
     };
     return {
       type: 'function',

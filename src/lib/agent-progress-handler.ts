@@ -11,7 +11,7 @@ type AgentProgressSessions = Pick<
   | 'appendToLastReasoning'
   | 'discardAgentAttempt'
   | 'finalizeAgentAttempt'
->;
+> & Partial<Pick<ReturnType<typeof useSessions>, 'updateLiveRouterProgress'>>;
 
 export function createAgentProgressHandler(
   sessions: AgentProgressSessions,
@@ -27,6 +27,25 @@ export function createAgentProgressHandler(
       return;
     }
     if (event.kind === 'iteration') return;
+    if (event.kind === 'router_stage') {
+      sessions.updateLiveRouterProgress?.(sessionId, current => ({ ...current, stage: event.stage, operation: undefined }));
+      return;
+    }
+    if (event.kind === 'router_reply_delta' || event.kind === 'router_reply_reset') {
+      sessions.updateLiveRouterProgress?.(sessionId, current => ({
+        ...current,
+        reply: event.kind === 'router_reply_delta' ? (current.reply ?? '') + event.delta : undefined,
+      }));
+      return;
+    }
+    if (event.kind === 'router_progress') {
+      if (event.entry.kind === 'operation') {
+        sessions.updateLiveRouterProgress?.(sessionId, current =>
+          current.stage === 'reply' ? current : { ...current, operation: event.entry.title });
+      }
+      sessions.addProgress('router_progress', event.entry.title, { sessionId, routerProgress: event.entry });
+      return;
+    }
     if (event.kind === 'tool_call') {
       if (event.name !== 'validate' && event.name !== 'commit') {
         const summary = event.name === 'searchSamples' ? summarizeSampleSearch(event.args) : [];
@@ -70,7 +89,7 @@ export function createAgentProgressHandler(
 
 type StreamDeltaEvent = Extract<
   ProgressEvent,
-  { kind: 'assistant_text_delta' | 'reasoning_delta' | 'assistant_reply_delta' }
+  { kind: 'assistant_text_delta' | 'reasoning_delta' | 'assistant_reply_delta' | 'router_reply_delta' }
 >;
 
 const STREAM_RENDER_INTERVAL_MS = 100;
@@ -85,6 +104,7 @@ const STREAM_RENDER_INTERVAL_MS = 100;
 export function createBatchedAgentProgressHandler(
   sessions: AgentProgressSessions,
   sessionId: string,
+  canPublish: () => boolean = () => true,
 ): (event: ProgressEvent) => void {
   const handle = createAgentProgressHandler(sessions, sessionId);
   let pending: StreamDeltaEvent | null = null;
@@ -95,14 +115,16 @@ export function createBatchedAgentProgressHandler(
     timer = null;
     const event = pending;
     pending = null;
-    if (event) handle(event);
+    if (event && canPublish()) handle(event);
   };
 
   return (event) => {
+    if (!canPublish()) return;
     if (
       event.kind !== 'assistant_text_delta'
       && event.kind !== 'reasoning_delta'
       && event.kind !== 'assistant_reply_delta'
+      && event.kind !== 'router_reply_delta'
     ) {
       flush();
       handle(event);

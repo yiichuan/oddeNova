@@ -1232,7 +1232,12 @@ export class StrudelService {
     this.notify({ isPlaying: playing, isPaused: playing ? false : this._state.isPaused });
   }
 
-  play = async (source: PlaybackSource = 'manual', context = analyticsContext(undefined, undefined, this.code)): Promise<void> => {
+  play = async (
+    source: PlaybackSource = 'manual',
+    context = analyticsContext(undefined, undefined, this.code),
+    signal?: AbortSignal,
+  ): Promise<boolean> => {
+    if (signal?.aborted) return false;
     const playback = this.playbackTelemetry.request(source, context);
     if (!this.editorInstance) {
       this.playbackTelemetry.finish('startup_failed', playback, undefined, 'engine_unavailable');
@@ -1255,31 +1260,42 @@ export class StrudelService {
     // piece that changed since the last play() may no longer set.
     this.panelAccent?.reset();
     this.notify({ error: null });
+    const isCurrent = () => token === this.playToken && !signal?.aborted;
+    const abort = () => {
+      if (token === this.playToken) this.stop();
+    };
+    signal?.addEventListener('abort', abort, { once: true });
     try {
       await this.ensurePlayableAudioGraph();
       await this.loadOpening(token);
       // Stopped, or pressed again, while the opening loaded.
-      if (token !== this.playToken || !this.editorInstance) return;
+      if (!isCurrent() || !this.editorInstance) return false;
       await this.editorInstance.evaluate();
+      if (!isCurrent()) return false;
       this.applyPendingSeek();
       this.syncTransportState();
       if (this._state.isPlaying) this.playbackTelemetry.start(playback);
       else this.playbackTelemetry.finish('startup_failed', playback);
       this.pageAudioRecovery?.clearResumeIntent();
       void this.setupMasterChain();
+      return this._state.isPlaying;
     } catch (error) {
+      if (!isCurrent()) return false;
       if (this.isLikelyAudioGraphError(error)) {
         try {
           await this.resetLiveAudioGraph();
+          if (!isCurrent()) return false;
           await this.editorInstance.evaluate();
+          if (!isCurrent()) return false;
           this.applyPendingSeek();
           this.syncTransportState();
           if (this._state.isPlaying) this.playbackTelemetry.start(playback);
           else this.playbackTelemetry.finish('startup_failed', playback);
           this.pageAudioRecovery?.clearResumeIntent();
           void this.setupMasterChain();
-          return;
+          return this._state.isPlaying;
         } catch (retryError) {
+          if (!isCurrent()) return false;
           const message = getErrorMessage(retryError);
           this.notify({ error: message });
           this.playbackTelemetry.finish('startup_failed', playback, retryError);
@@ -1290,6 +1306,8 @@ export class StrudelService {
       this.notify({ error: message });
       this.playbackTelemetry.finish('startup_failed', playback, error);
       throw error;
+    } finally {
+      signal?.removeEventListener('abort', abort);
     }
   };
 

@@ -58,6 +58,7 @@ const MESSAGE_KEYS = new Set([
   'agentAttemptId',
   'timestamp',
   'progressKind',
+  'routerProgress',
   'toolName',
   'sampleSearchSummary',
   'ok',
@@ -248,6 +249,15 @@ export function isSafeChatMessageTransfer(value: unknown): boolean {
   if (value.inputMode !== undefined && value.inputMode !== 'normal' && value.inputMode !== 'choice') return false;
   if (value.agentAttemptId !== undefined && typeof value.agentAttemptId !== 'string') return false;
   if (value.progressKind !== undefined && typeof value.progressKind !== 'string') return false;
+  const routerProgress = value.routerProgress;
+  if (routerProgress !== undefined && (!isRecord(routerProgress)
+    || !Object.keys(routerProgress).every(key => ['kind', 'title', 'detail', 'durationMs', 'toolAction'].includes(key))
+    || !['plan', 'tool', 'strategy', 'operation'].some(kind => kind === routerProgress.kind)
+    || typeof routerProgress.title !== 'string'
+    || (routerProgress.detail !== undefined && typeof routerProgress.detail !== 'string')
+    || (routerProgress.toolAction !== undefined && typeof routerProgress.toolAction !== 'string')
+    || (routerProgress.durationMs !== undefined
+      && (!finite(routerProgress.durationMs) || Number(routerProgress.durationMs) < 0)))) return false;
   if (value.toolName !== undefined && typeof value.toolName !== 'string') return false;
   if (value.sampleSearchSummary !== undefined && (!Array.isArray(value.sampleSearchSummary)
     || !value.sampleSearchSummary.every(item => isRecord(item)
@@ -282,6 +292,7 @@ export function projectChatMessageForTransfer(value: ChatMessage): ChatMessage {
     ...(value.inputMode !== undefined ? { inputMode: value.inputMode } : {}),
     ...(value.agentAttemptId !== undefined ? { agentAttemptId: value.agentAttemptId } : {}),
     ...(value.progressKind !== undefined ? { progressKind: value.progressKind } : {}),
+    ...(value.routerProgress ? { routerProgress: value.routerProgress } : {}),
     ...(value.toolName !== undefined ? { toolName: value.toolName } : {}),
     ...(value.sampleSearchSummary !== undefined ? { sampleSearchSummary: value.sampleSearchSummary } : {}),
     ...(value.ok !== undefined ? { ok: value.ok } : {}),

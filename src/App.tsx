@@ -1,7 +1,7 @@
 import { analyticsContext, analyticsMessageTurn, setAnalyticsWorkspace } from './lib/analytics-context';
 import { emitTelemetry } from './lib/telemetry';
 import { ownImage, type ImageAttachment } from './lib/image-attachments';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { DRAFT_SEGMENT_ID, codeBeforeMessage } from './lib/draft-diff';
@@ -65,6 +65,7 @@ import { conversationTitle, type FavoriteConversation } from './lib/favorite-con
 import { sessionAsFavorite } from './lib/session-favorites';
 import { fullSessionTitle } from './lib/full-session-title';
 import { deriveSessionTitle } from './lib/session-title';
+import { withSessionTurnLock } from './lib/session-turn-lock';
 import { useVisualViewport } from './hooks/useVisualViewport';
 import { useBrowserChromeColor } from './hooks/useBrowserChromeColor';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
@@ -405,7 +406,7 @@ export default function App() {
     handleChatFocusChange,
     handleCodeFocusChange,
   } = useLayout();
-  useEffect(() => {
+  useLayoutEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
 
@@ -1114,7 +1115,7 @@ export default function App() {
   // Build the agent progress→UI handler for a given session. Shared verbatim by
   // handleInstruction and handleMoodInstruction.
   const makeAgentProgressHandler = useCallback(
-    (sessionId: string) => createBatchedAgentProgressHandler(sessions, sessionId),
+    (sessionId: string, canPublish?: () => boolean) => createBatchedAgentProgressHandler(sessions, sessionId, canPublish),
     [sessions]
   );
 
@@ -1125,6 +1126,8 @@ export default function App() {
     strudel,
     sessions,
     currentCode,
+    getLiveEditorCode: () => strudelRef.current.getDisplayedCode?.()
+      ?? (strudelRef.current.code || sessions.currentSession?.code || ''),
     abortControllersRef,
     currentIdRef,
     setLoadingSessions,
@@ -1192,6 +1195,8 @@ export default function App() {
       entryPoint?: AgentEntryPoint;
       selectedChoice?: true;
       skipAddMessage?: boolean;
+      messageId?: string;
+      initialRevisionId?: string;
       initialCode?: string;
       history?: ConversationTurn[];
       images?: ImageAttachment[];
@@ -1240,6 +1245,8 @@ export default function App() {
         selectedChoice: options?.selectedChoice,
         includeHistory: true,
         skipAddMessage: options?.skipAddMessage,
+        messageId: options?.messageId,
+        initialRevisionId: options?.initialRevisionId,
         initialCode: options?.initialCode,
         suppliedHistory: history?.map(turn => ({ ...turn, images: turn.images?.map(image => replacements.get(image.id) ?? image) })),
         onFirstUserMessage: shouldGenerateTitle && sessionId
@@ -1313,14 +1320,17 @@ export default function App() {
       pending.add(scope);
       try {
         noteRealInstructionRef.current();
-        await handleInstruction(text, entryPoint === 'choice'
-          ? { entryPoint: 'suggestion', selectedChoice: true }
-          : { entryPoint, images, humming });
+        await withSessionTurnLock(ownerKey, sessions.currentSession, readCachedDetail, async () => {
+          if (scope !== imageScopeRef.current) throw new Error('会话已切换，请重新发送');
+          await handleInstruction(text, entryPoint === 'choice'
+            ? { entryPoint: 'suggestion', selectedChoice: true }
+            : { entryPoint, images, humming });
+        });
       } finally {
         pending.delete(scope);
       }
     },
-    [handleInstruction],
+    [handleInstruction, ownerKey, sessions.currentSession, readCachedDetail],
   );
   const hummingInput = useHummingInput({
     ownerKey,
@@ -1399,29 +1409,38 @@ export default function App() {
 
   const handleResend = useCallback(
     async (messageId: string, newContent: string, action: 'retry' | 'edit_resend' = 'edit_resend', sourceTurn?: string) => {
-      const context = analyticsContext();
-      const allMessages = sessions.currentSession?.messages ?? [];
-      const targetIndex = allMessages.findIndex(message => message.id === messageId);
-      const followingReply = targetIndex < 0 ? undefined : allMessages[targetIndex + 1];
-      context.turn_id = sourceTurn ?? (followingReply ? analyticsMessageTurn(sessions.currentId, followingReply.id) : undefined);
-      const allMsgs = sessions.currentSession?.messages ?? [];
-      const history = conversationHistoryBefore(allMsgs, messageId);
+      const scope = imageScopeRef.current;
+      try {
+        await withSessionTurnLock(ownerKey, sessions.currentSession, readCachedDetail, async () => {
+          if (scope !== imageScopeRef.current) return;
+          const context = analyticsContext();
+          const allMessages = sessions.currentSession?.messages ?? [];
+          const targetIndex = allMessages.findIndex(message => message.id === messageId);
+          const followingReply = targetIndex < 0 ? undefined : allMessages[targetIndex + 1];
+          context.turn_id = sourceTurn ?? (followingReply ? analyticsMessageTurn(sessions.currentId, followingReply.id) : undefined);
+          const history = conversationHistoryBefore(allMessages, messageId);
 
-      const rewound = rewindBeforeMessage(messageId);
-      emitTelemetry('creation_action', { action, outcome: rewound ? 'success' : 'invalid_target' }, context);
-      if (!rewound) return;
+          const rewound = rewindBeforeMessage(messageId);
+          emitTelemetry('creation_action', { action, outcome: rewound ? 'success' : 'invalid_target' }, context);
+          if (!rewound) return;
 
-      sessions.truncateAndEdit(messageId, newContent);
-      await handleInstruction(newContent, {
-        images: allMsgs.find(message => message.id === messageId)?.images,
-        entryPoint: 'retry',
-        skipAddMessage: true,
-        initialCode: rewound.previousCode,
-        history,
-        humming: rewound.target.humming,
-      });
+          sessions.truncateAndEdit(messageId, newContent);
+          await handleInstruction(newContent, {
+            images: rewound.target.images,
+            entryPoint: 'retry',
+            skipAddMessage: true,
+            messageId,
+            initialRevisionId: allMessages.slice(0, targetIndex).findLast(message => message.revisionId)?.revisionId,
+            initialCode: rewound.previousCode,
+            history,
+            humming: rewound.target.humming,
+          });
+        });
+      } catch (error) {
+        if (scope === imageScopeRef.current) strudelRef.current.setError(error instanceof Error ? error.message : t('agentResponseFailed'));
+      }
     },
-    [sessions, handleInstruction, rewindBeforeMessage]
+    [sessions, handleInstruction, rewindBeforeMessage, ownerKey, readCachedDetail]
   );
 
   const handleRollback = useCallback(
@@ -2584,6 +2603,7 @@ export default function App() {
               key={sessions.currentId ?? 'default'}
               ownerKey={ownerKey}
               messages={messages}
+              liveRouterProgress={sessions.liveRouterProgress}
               pendingHumming={hummingInput.pendingSubmission}
               hummingWaveformToolCalled={hummingInput.waveformToolCalled}
               onCancelHumming={cancelHummingTranscription}
@@ -2992,6 +3012,7 @@ export default function App() {
               ownerKey={ownerKey}
               title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
               messages={videoDemoMsgs ?? messages}
+              liveRouterProgress={sessions.liveRouterProgress}
               revisions={current?.revisions}
               isLoading={isLoading || isReplaying}
               engineReady={strudel.engineReady}

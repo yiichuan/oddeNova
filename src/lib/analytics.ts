@@ -8,6 +8,7 @@ export type AppSurface = 'main' | 'shared_session' | 'demo' | 'skill_import';
 export type AnalyticsLocale = 'zh-CN' | 'en';
 export type AgentEntryPoint = 'text' | 'suggestion' | 'mood' | 'retry';
 export type AgentTurnOutcome =
+  | 'answered'
   | 'played'
   | 'generated'
   | 'playback_failed'
@@ -64,6 +65,14 @@ export interface AgentTurnFinishedProperties extends AgentTurnBaseProperties {
   failure_stage?: string;
   error_code?: string;
   http_status?: number;
+  route?: 'reply' | 'inspect' | 'execute';
+  preparation_ms?: number;
+  router_request_count?: number;
+  router_duration_ms?: number;
+  router_input_tokens?: number;
+  router_output_tokens?: number;
+  first_answer_ms?: number;
+  time_to_play_ms?: number;
 }
 
 interface AnalyticsLocation {
@@ -181,6 +190,8 @@ const EVENT_PROPERTY_ALLOWLIST: Record<string, ReadonlySet<string>> = {
     'duration_ms',
     'iterations',
     'request_retry_count', 'tool_failure_count', 'termination_reason', 'failure_stage', 'error_code', 'http_status',
+    'route', 'preparation_ms', 'router_request_count', 'router_duration_ms',
+    'router_input_tokens', 'router_output_tokens', 'first_answer_ms', 'time_to_play_ms',
   ]),
   share_completed: new Set(['schema_version', 'share_method']),
   share_print_finished: new Set(['schema_version', 'outcome']),
@@ -414,6 +425,14 @@ export function createAnalytics(dependencies: AnalyticsDependencies): BusinessAn
           failure_stage: properties.failure_stage,
           error_code: properties.error_code,
           http_status: properties.http_status,
+          route: properties.route,
+          preparation_ms: properties.preparation_ms,
+          router_request_count: properties.router_request_count,
+          router_duration_ms: properties.router_duration_ms,
+          router_input_tokens: properties.router_input_tokens,
+          router_output_tokens: properties.router_output_tokens,
+          first_answer_ms: properties.first_answer_ms,
+          time_to_play_ms: properties.time_to_play_ms,
         }).filter(([, value]) => value !== undefined)),
       }, properties.context);
     },

@@ -1,3 +1,4 @@
+import type { RouterProgress } from '../agent/progress';
 import type { ImageAttachment } from '../lib/image-types';
 // Type definitions for chat messages — shared by useSessions and the
 // conversation/sidebar components. The legacy useChat() hook was removed in
@@ -9,7 +10,7 @@ export type ChatRole = 'user' | 'assistant' | 'progress';
 export type InputMode = 'normal' | 'choice';
 export type ChatEntryPoint = 'text' | 'suggestion' | 'choice';
 
-export type ProgressKind = 'tool_call' | 'tool_result' | 'commit' | 'warn' | 'iteration' | 'thinking' | 'reasoning';
+export type ProgressKind = 'router_progress' | 'tool_call' | 'tool_result' | 'commit' | 'warn' | 'iteration' | 'thinking' | 'reasoning';
 
 export interface SampleSearchSummaryItem {
   query: string;
@@ -36,6 +37,7 @@ export interface ChatMessage {
   timestamp: number;
   // For role === 'progress':
   progressKind?: ProgressKind;
+  routerProgress?: RouterProgress;
   toolName?: string;
   sampleSearchSummary?: SampleSearchSummaryItem[];
   ok?: boolean;

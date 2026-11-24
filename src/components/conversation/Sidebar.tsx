@@ -12,11 +12,13 @@ import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
 import type { HummingInputController } from '../../hooks/useHummingInput';
 import type { HummingAttachment } from '../../types/humming';
+import type { LiveRouterProgress } from '../../agent/progress';
 
 interface SidebarProps {
   ownerKey?: string;
   title: string;
   messages: ChatMessage[];
+  liveRouterProgress?: LiveRouterProgress;
   revisions?: CodeRevision[];
   isLoading: boolean;
   engineReady: boolean;
@@ -88,6 +90,7 @@ export default function Sidebar({
   ownerKey,
   title,
   messages,
+  liveRouterProgress,
   revisions,
   isLoading,
   engineReady,
@@ -265,6 +268,7 @@ export default function Sidebar({
             key={currentId ?? 'default'}
             ownerKey={ownerKey}
             messages={messages}
+            liveRouterProgress={liveRouterProgress}
             pendingHumming={humming?.pendingSubmission}
             hummingWaveformToolCalled={humming?.waveformToolCalled}
             onCancelHumming={humming?.cancelTranscription}

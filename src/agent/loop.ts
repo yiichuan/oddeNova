@@ -1,5 +1,8 @@
 import type { ImageAttachment, UserContent } from '../lib/image-types';
 import { hasHummingWaveformReport } from '../lib/humming-context';
+import type { RouterProgress, RouterStage, SessionProgress } from './progress';
+import { describeEditTargets } from './session-scope';
+import type { AgentTraceSink } from '../lib/agent-trace';
 // Agent loop. Repeatedly calls the model with the tool schemas, dispatches
 // each returned tool_call, feeds results back, and terminates when:
 //   - the model invokes `commit` (CommitSignal)
@@ -82,6 +85,13 @@ export interface LLMCaller {
 }
 
 export type ProgressEvent =
+  | { kind: 'router_progress'; entry: RouterProgress }
+  | { kind: 'router_stage'; stage: RouterStage }
+  | { kind: 'router_reply_delta'; delta: string; attemptId?: never }
+  | { kind: 'router_reply_reset' }
+  | { kind: 'session_progress'; entry: SessionProgress }
+  | { kind: 'router_request'; durationMs: number; usage?: LLMUsage }
+  | { kind: 'route_decision'; route: 'reply' | 'inspect' | 'execute'; preparationMs: number }
   | { kind: 'request_retry' }
   | { kind: 'iteration'; index: number }
   | { kind: 'tool_call'; name: string; args: Record<string, unknown> }
@@ -100,6 +110,8 @@ export type ConversationTurn = { role: 'user' | 'assistant'; content: string; im
 export interface RunAgentOptions {
   initialCode: string;
   instruction: string;
+  trace?: AgentTraceSink;
+  validateScope?: ToolContext['validateScope'];
   preparedUserContent?: UserContent;
   preparedHistory?: ChatMsg[];
   locale: 'zh' | 'en';
@@ -164,6 +176,7 @@ interface ChatWithToolsRetryOptions {
   signal?: AbortSignal;
   enableThinking: boolean;
   thinkingLevel: ThinkingLevel;
+  publishModelText: boolean;
 }
 
 async function chatWithToolsWithRetry(
@@ -178,8 +191,10 @@ async function chatWithToolsWithRetry(
     signal,
     enableThinking,
     thinkingLevel,
+    publishModelText,
   } = opts;
 
+  const onModelText = publishModelText ? onProgress : undefined;
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt++) {
     const attemptId = nextRequestAttemptId(iteration, attempt);
     let receivedPartial = false;
@@ -192,12 +207,12 @@ async function chatWithToolsWithRetry(
         messages,
         tools,
         makeProgressDelta(
-          onProgress,
+          onModelText,
           enableThinking ? 'assistant_text_delta' : 'assistant_reply_delta',
           attemptId,
           markPartial,
         ),
-        makeProgressDelta(onProgress, 'reasoning_delta', attemptId, markPartial),
+        makeProgressDelta(onModelText, 'reasoning_delta', attemptId, markPartial),
         signal,
         enableThinking,
         thinkingLevel,
@@ -281,6 +296,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   const {
     initialCode,
     instruction,
+    trace,
     locale,
     systemPrompt,
     llm,
@@ -299,7 +315,13 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     finalCode: null,
   };
   const isZh = locale === 'zh';
-  const ctx: ToolContext = { state, isZh, humming, sampleSearch: opts.sampleSearch };
+  let iterationStarted = performance.now();
+  const reportSession = opts.validateScope
+    ? (entry: SessionProgress) => onProgress?.({
+      kind: 'session_progress',
+      entry: entry.kind === 'strategy' ? { ...entry, durationMs: performance.now() - iterationStarted } : entry,
+    }) : undefined;
+  const ctx: ToolContext = { state, isZh, humming, sampleSearch: opts.sampleSearch, validateScope: opts.validateScope, reportSession };
   const userText = typeof opts.preparedUserContent === 'string' ? opts.preparedUserContent : instruction;
   let userTurn: string;
   if (initialCode) {
@@ -325,7 +347,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     { role: 'user', content: Array.isArray(opts.preparedUserContent) ? opts.preparedUserContent.map((block, index) => index === 0 && block.type === 'text' ? { ...block, text: userTurn } : block) : userTurn },
   ];
 
-  const tools = getOpenAIToolSchemas(isZh, hasHummingWaveformReport(humming)).filter(tool => ctx.sampleSearch || tool.function.name !== 'searchSamples');
+  const tools = getOpenAIToolSchemas(isZh, hasHummingWaveformReport(humming), Boolean(opts.validateScope))
+    .filter(tool => ctx.sampleSearch || tool.function.name !== 'searchSamples');
   const start = Date.now();
   let iterations = 0;
   let explanation = '';
@@ -351,6 +374,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       break;
     }
     iterations = i + 1;
+    iterationStarted = performance.now();
     onProgress?.({ kind: 'iteration', index: iterations });
 
     const resp = await chatWithToolsWithRetry({
@@ -362,6 +386,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       signal,
       enableThinking,
       thinkingLevel,
+      publishModelText: !opts.validateScope,
     });
     if (resp.usage) lastUsage = resp.usage;
 
@@ -428,6 +453,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
         if (call.name === 'searchSamples') {
           sampleDebug('deduplicated', { iteration: i + 1, callId: call.id, args: parsedArgs, result: cachedResult });
         }
+        trace?.({ from: 'session', to: 'tool', label: '复用工具结果 · ' + call.name,
+          data: { callId: call.id, iteration: i + 1, result: JSON.parse(cachedResult) } });
         // Intentionally skip onProgress — duplicate calls should be invisible to the UI.
         console.debug(`[loop] iter ${i + 1} dedup: skipping duplicate tool_call "${call.name}"`);
         messages.push({
@@ -442,17 +469,48 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       console.debug(`[loop] iter ${i + 1} tool_call: ${call.name}`, parsedArgs);
       onProgress?.({ kind: 'tool_call', name: call.name, args: parsedArgs });
       const toolStarted = performance.now();
+      const beforeEdit = state.code;
+      if (call.name !== 'reportArrangement') reportSession?.({ kind: 'tool', facts: {
+        action: call.name, phase: 'started',
+        ...(call.name === 'searchSamples' && { queries: parsedArgs.queries }),
+      } });
+      trace?.({ from: 'session', to: 'tool', label: '调用 · ' + call.name,
+        data: { callId: call.id, iteration: i + 1, arguments: parsedArgs } });
       if (call.name === 'searchSamples') {
         sampleSearchCalls++;
         sampleDebug('call', { iteration: i + 1, callId: call.id, args: parsedArgs });
       }
 
       try {
-        const outcome = await dispatchToolCall(call, ctx);
+        const outcome = await dispatchToolCall(call, ctx, undefined, trace);
         if (call.name === 'searchSamples') {
           sampleDebug('result', { iteration: i + 1, callId: call.id,
             durationMs: Math.round(performance.now() - toolStarted), result: outcome.result });
         }
+        if (reportSession && call.name === 'setCode' && outcome.result.ok && beforeEdit !== state.code) {
+          const oldTargets = describeEditTargets(beforeEdit, Infinity);
+          const newTargets = describeEditTargets(state.code, Infinity);
+          const before = new Map([...oldTargets.layers, ...oldTargets.sections].map(layer => [layer.id, layer.preview]));
+          for (const layer of newTargets.layers.length ? newTargets.layers : newTargets.sections) {
+            const name = layer.label ?? layer.id;
+            const previous = before.get(layer.id);
+            if (previous === layer.preview) continue;
+            reportSession({ kind: 'operation', facts: {
+              layer: name, action: previous === undefined ? 'added to draft' : 'changed in draft',
+              before: previous?.slice(0, 800), after: layer.preview.slice(0, 1800),
+            } });
+          }
+        }
+        if (call.name !== 'reportArrangement') reportSession?.({ kind: 'tool', facts: {
+          action: call.name, phase: 'finished', ok: outcome.result.ok,
+          ...(call.name === 'searchSamples' && outcome.result.ok && {
+            queries: parsedArgs.queries,
+            searchEvidence: JSON.stringify(outcome.result.data ?? {}).slice(0, 1800),
+          }),
+          ...(call.name === 'analyzeHummingWaveform' && outcome.result.ok && {
+            analysisEvidence: JSON.stringify(outcome.result.data ?? {}).slice(0, 1600),
+          }),
+        } });
         if (call.name === 'setCode' && sampleSearchCalls > 0 && outcome.result.ok) {
           sampleDebug('setCode after search', { iteration: i + 1, code: state.code });
         }
@@ -470,6 +528,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
             : { ok: false, error: outcome.result.error }
         );
         iterResultCache.set(dedupKey, resultJson);
+        trace?.({ from: 'tool', to: 'session', label: '返回 · ' + call.name,
+          data: { callId: call.id, result: outcome.result }, durationMs: performance.now() - toolStarted, failed: !outcome.result.ok });
         onProgress?.({
           kind: 'tool_result',
           name: outcome.name,
@@ -478,6 +538,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
         });
       } catch (e) {
         if (e instanceof CommitSignal) {
+          reportSession?.({ kind: 'tool', facts: { action: call.name, phase: 'finished', ok: true, candidateOnly: true } });
           // Commit terminates the loop. Record the tool reply so the
           // assistant's tool_calls are paired before exit.
           finalCode = e.code;
@@ -498,6 +559,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
           }
           const commitResultJson = JSON.stringify({ ok: true, committed: true });
           iterResultCache.set(dedupKey, commitResultJson);
+          trace?.({ from: 'tool', to: 'session', label: '提交候选版本 · ' + call.name,
+            data: { callId: call.id, code: e.code, explanation, layerNotes }, durationMs: performance.now() - toolStarted });
           messages.push({
             role: 'tool',
             tool_call_id: call.id,
@@ -509,6 +572,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
           break outer;
         }
         const msg = getErrorMessage(e);
+        trace?.({ from: 'tool', to: 'session', label: '执行失败 · ' + call.name,
+          data: { callId: call.id, error: msg }, durationMs: performance.now() - toolStarted, failed: true });
         if (call.name === 'searchSamples') sampleDebug('error', { callId: call.id, error: msg });
         outcomes.push({
           id: call.id,
@@ -544,7 +609,12 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   if (!committed && !signal?.aborted) {
     const codeChanged = !!state.code && state.code !== initialCode;
     if (codeChanged) {
+      const validationStarted = performance.now();
+      trace?.({ from: 'session', to: 'tool', label: '校验隐式提交', data: { code: state.code } });
       const v = await validateCommittedCode(state.code, isZh);
+      reportSession?.({ kind: 'tool', facts: { action: 'validate final draft', phase: 'finished', ok: v.ok } });
+      trace?.({ from: 'tool', to: 'session', label: '隐式提交校验结果',
+        data: v, durationMs: performance.now() - validationStarted, failed: !v.ok });
       if (v.ok) {
         committed = true;
         finalCode = state.code;

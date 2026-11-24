@@ -1,5 +1,7 @@
 import { analyticsContext, rememberAnalyticsMessage } from '../lib/analytics-context';
 import type { ImageAttachment } from '../lib/image-attachments';
+import type { TurnRef } from '../agent/router';
+import type { LiveRouterProgress } from '../agent/progress';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage, InputMode, ProgressKind } from './useChat';
 import {
@@ -139,6 +141,18 @@ export interface CodeRevision {
 
 export type CodeRevisionDraft = Omit<CodeRevision, 'id' | 'createdAt'>;
 
+export interface AgentRevisionCommit {
+  ref: TurnRef;
+  expectedCode: string;
+  expectedRevisionId?: string;
+  beforeCode: string;
+  code: string;
+  summary: string;
+  layerNotes?: Record<string, string>;
+  inputMode: InputMode;
+  suggestions: string[];
+}
+
 export interface Session {
   id: string;
   title: string;
@@ -149,6 +163,8 @@ export interface Session {
   externalSource?: ExternalSessionSource;
   /** Optional for backward compatibility with sessions saved before revisions existed. */
   revisions?: CodeRevision[];
+  /** Local recovery marker for a routed turn whose reply has not been saved. */
+  pendingAgentMessageId?: string;
   /**
    * Next-step suggestion chips, bound to the code they were generated for.
    * Persisted so a page refresh can restore them without regenerating.
@@ -168,6 +184,7 @@ export interface CloudSessionRepository {
 }
 
 export interface UseSessionsOptions {
+  inMemory?: boolean;
   ownerKey?: string;
   syncEnabled?: boolean;
   cloud?: CloudSessionRepository;
@@ -327,6 +344,23 @@ export function makeGreetingMessage(): ChatMessage {
   };
 }
 
+export function recoverInterruptedAgentTurn(session: Session): Session {
+  const pendingId = session.pendingAgentMessageId;
+  if (!pendingId) return session;
+  const lastConversation = session.messages.findLast(message => message.role !== 'progress');
+  if (lastConversation?.role !== 'user' || lastConversation.id !== pendingId) {
+    return { ...session, pendingAgentMessageId: undefined };
+  }
+  return {
+    ...session,
+    pendingAgentMessageId: undefined,
+    messages: [...session.messages, {
+      id: `interrupted-${pendingId}`, role: 'assistant',
+      content: t('agentTurnRecovered'), timestamp: lastConversation.timestamp,
+    }],
+  };
+}
+
 function isEffectivelyEmpty(s: Session): boolean {
   return !s.code && s.messages.every((m) => m.isGreeting === true);
 }
@@ -462,6 +496,7 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
     ...s,
     messages,
     revisions: revisionsReferencedBy(messages, s.revisions),
+    pendingAgentMessageId: undefined,
     inputMode: inputModeReferencedBy(messages),
     title,
   };
@@ -475,6 +510,7 @@ export function applyTruncate(s: Session, targetMessageId: string): Session {
     ...s,
     messages,
     revisions: revisionsReferencedBy(messages, s.revisions),
+    pendingAgentMessageId: undefined,
     inputMode: inputModeReferencedBy(messages),
   };
 }
@@ -599,13 +635,27 @@ export function applyFinalizeLastAssistantMessage(
 }
 
 export function useSessions(options: UseSessionsOptions = {}) {
+  const inMemory = options.inMemory ?? false;
   const ownerKey = options.ownerKey ?? 'guest';
-  const syncEnabled = options.syncEnabled ?? false;
+  const syncEnabled = !inMemory && (options.syncEnabled ?? false);
   const cloud = options.cloud;
   const startNewSessionToken = options.startNewSessionToken ?? 0;
   const cloudOwnerId = ownerKey.startsWith('user:') ? ownerKey.slice('user:'.length) : undefined;
   const isAccountOwner = ownerKey.startsWith('user:');
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [liveRouterBySession, setLiveRouterBySession] = useState<Record<string, LiveRouterProgress>>({});
+  const updateLiveRouterProgress = useCallback(
+    (id: string, update?: (current: LiveRouterProgress) => LiveRouterProgress) => {
+      setLiveRouterBySession(previous => {
+        if (update) return { ...previous, [id]: update(previous[id] ?? {}) };
+        if (!previous[id]) return previous;
+        const next = { ...previous };
+        delete next[id];
+        return next;
+      });
+    },
+    [],
+  );
   // Read by callbacks that must see the current list without taking it as a
   // dependency — an identity that changed on every session write would ripple
   // through the cloud library and out to every consumer of a switch handler.
@@ -760,9 +810,17 @@ export function useSessions(options: UseSessionsOptions = {}) {
     };
     (async () => {
       setIsLoading(true);
+      if (inMemory) {
+        const fresh = makeEmptySession();
+        commitSessions([fresh]);
+        setCurrentId(fresh.id);
+        setLoadedOwnerKey(ownerKey);
+        setIsLoading(false);
+        return;
+      }
       await openDB();
       const persistent = isSessionStoragePersistent();
-      let loaded = await getAllSessions(ownerKey);
+      let loaded = (await getAllSessions(ownerKey)).map(recoverInterruptedAgentTurn);
       const storedCurrentId = isAccountOwner
         ? null
         : await getCurrentSessionId(ownerKey);
@@ -917,6 +975,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
     })();
     return () => { cancelled = true; };
   }, [
+    inMemory,
     ownerKey,
     isAccountOwner,
     syncEnabled,
@@ -1019,7 +1078,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       // A late writer (suggestion chips, a finishing agent turn) can fire during
       // that window. Persisting then would file the previous owner's session
       // under the new owner — leaking account history into the guest list.
-      if (!ownerLoaded) return;
+      if (!ownerLoaded || inMemory) return;
       if (
         isAccountOwner
         && !options.force
@@ -1036,7 +1095,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       if (options.streaming) localWrites.schedule(write);
       else void localWrites.writeNow(write);
     },
-    [isAccountOwner, ownerLoaded, localWrites, ownerKey],
+    [inMemory, isAccountOwner, ownerLoaded, localWrites, ownerKey],
   );
 
   const persistSession = useCallback(
@@ -1096,7 +1155,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       await localWrites.writeNow({ id: adoptedSession.id, session: adoptedSession, telemetry: { context: analyticsContext(session.id, ownerKey, session.code) } });
       persistedSessionIdsRef.current.add(session.id);
       setSessions((previous) => [
-        adoptedSession,
+        workingCopy ? adoptedSession : recoverInterruptedAgentTurn(adoptedSession),
         ...previous.filter((existing) => existing.id !== adoptedSession.id),
       ]);
     } else if (!workingCopy) {
@@ -1266,8 +1325,86 @@ export function useSessions(options: UseSessionsOptions = {}) {
     [getApply]
   );
 
+  const commitAgentRevision = useCallback((commit: AgentRevisionCommit, canCommit: () => boolean): Promise<string | null> => {
+    const { ref, expectedCode, expectedRevisionId, beforeCode, code, summary, inputMode, layerNotes, suggestions } = commit;
+    const revisionId = `rev-${ref.turnId}`;
+    const messageId = `reply-${ref.turnId}`;
+    const now = Date.now();
+    return new Promise(resolve => {
+      setSessions(previous => {
+        const session = previous.find(candidate => candidate.id === ref.sessionId);
+        if (!session || ownerKeyRef.current !== ownerKey || !canCommit()) {
+          resolve(null);
+          return previous;
+        }
+        // Re-running an accepted commit (including a repeated state updater)
+        // cannot append the same receipt or revision again.
+        if (session.revisions?.some(revision => revision.id === revisionId)) {
+          resolve(null);
+          return previous;
+        }
+        const latestUser = session.messages.findLast(message => message.role === 'user');
+        if (latestUser?.id !== ref.messageId || session.code !== expectedCode
+          || session.revisions?.at(-1)?.id !== expectedRevisionId) {
+          resolve(null);
+          return previous;
+        }
+        const revision: CodeRevision = {
+          id: revisionId, beforeCode, afterCode: code, playbackStatus: 'not_attempted', createdAt: now,
+        };
+        const updated: Session = {
+          ...session,
+          code,
+          inputMode,
+          pendingAgentMessageId: undefined,
+          updatedAt: now,
+          suggestions: suggestions.length ? { forCode: code, items: suggestions } : undefined,
+          revisions: [...(session.revisions ?? []), revision],
+          messages: [...session.messages, {
+            id: messageId, role: 'assistant', content: summary, code, revisionId, inputMode, layerNotes, timestamp: now,
+          }],
+        };
+        rememberAnalyticsMessage(session.id, messageId, ref.turnId);
+        persistSession(updated);
+        resolve(revisionId);
+        return previous.map(candidate => candidate === session ? updated : candidate);
+      });
+    });
+  }, [ownerKey, persistSession]);
+
+  const updateAgentReceipt = useCallback((
+    sessionId: string, revisionId: string, playbackStatus: PlaybackStatus, content: string,
+    metadata?: { inputMode: InputMode; suggestions: string[] },
+  ): void => {
+    updateSession(sessionId, session => {
+      if (ownerKeyRef.current !== ownerKey || !session.messages.some(message => message.revisionId === revisionId)) return session;
+      const isCurrent = session.revisions?.at(-1)?.id === revisionId
+        && session.revisions.at(-1)?.afterCode === session.code;
+      return {
+        ...session,
+        ...(metadata && isCurrent && {
+          inputMode: metadata.inputMode,
+          suggestions: metadata.suggestions.length ? { forCode: session.code, items: metadata.suggestions } : undefined,
+        }),
+        messages: session.messages.map(message => message.revisionId === revisionId
+          ? { ...message, content, ...(metadata && { inputMode: metadata.inputMode }) } : message),
+        revisions: session.revisions?.map(revision => revision.id === revisionId ? { ...revision, playbackStatus } : revision),
+      };
+    });
+  }, [ownerKey, updateSession]);
+
+  const hasSession = useCallback((id: string): boolean =>
+    ownerKeyRef.current === ownerKey && sessionsRef.current.some(session => session.id === id), [ownerKey]);
+
+  const markAgentTurnPending = useCallback((ref: TurnRef): void => {
+    updateSession(ref.sessionId, session => {
+      const latestUser = session.messages.findLast(message => message.role === 'user');
+      return latestUser?.id === ref.messageId ? { ...session, pendingAgentMessageId: ref.messageId } : session;
+    });
+  }, [updateSession]);
+
   const addProgress = useCallback(
-    (kind: ProgressKind, content: string, opts?: Pick<ChatMessage, 'toolName' | 'ok' | 'sampleSearchSummary'> & { sessionId?: string }): void => {
+    (kind: ProgressKind, content: string, opts?: Pick<ChatMessage, 'toolName' | 'ok' | 'sampleSearchSummary' | 'routerProgress'> & { sessionId?: string }): void => {
       const apply = getApply(opts?.sessionId);
       apply((s) => ({
         ...s,
@@ -1279,6 +1416,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
             content,
             timestamp: Date.now(),
             progressKind: kind,
+            ...(opts?.routerProgress && { routerProgress: opts.routerProgress }),
             toolName: opts?.toolName,
             ok: opts?.ok,
             ...(opts?.sampleSearchSummary && { sampleSearchSummary: opts.sampleSearchSummary }),
@@ -1340,13 +1478,18 @@ export function useSessions(options: UseSessionsOptions = {}) {
   );
 
   const finalizeLastAssistantMessage = useCallback(
-    (content: string, sessionId?: string, turnId?: string): void => {
+    (content: string, sessionId?: string, turnId?: string, inputMode?: InputMode): void => {
       const apply = getApply(sessionId);
       apply((s) => {
-        const updated = applyFinalizeLastAssistantMessage(s, content);
+        const updated = applyFinalizeLastAssistantMessage(
+          s.pendingAgentMessageId ? { ...s, pendingAgentMessageId: undefined } : s, content,
+        );
         const message = updated.messages.at(-1);
-        if (message) rememberAnalyticsMessage(s.id, message.id, turnId);
-        return updated;
+        if (!message) return updated;
+        rememberAnalyticsMessage(s.id, message.id, turnId);
+        return inputMode
+          ? { ...updated, inputMode, messages: [...updated.messages.slice(0, -1), { ...message, inputMode }] }
+          : updated;
       });
     },
     [getApply]
@@ -1408,10 +1551,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
 
   const activateSession = useCallback((id: string): void => {
     setCurrentId(id);
-    if (!isAccountOwner || persistedSessionIdsRef.current.has(id)) {
+    if (!inMemory && (!isAccountOwner || persistedSessionIdsRef.current.has(id))) {
       void dbPutCurrentSessionId(id, ownerKey);
     }
-  }, [isAccountOwner, ownerKey]);
+  }, [inMemory, isAccountOwner, ownerKey]);
 
   const newSession = useCallback(() => {
     setSessions((prev) => {
@@ -2109,10 +2252,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
       noteCreatedSession(id);
       setSessions((prev) => [branched, ...prev]);
       setCurrentId(id);
-      dbPutCurrentSessionId(id, ownerKey);
+      if (!inMemory) void dbPutCurrentSessionId(id, ownerKey);
       persistSession(branched, 'checkpoint');
     },
-    [sessions, currentId, noteCreatedSession, ownerKey, persistSession]
+    [sessions, currentId, inMemory, noteCreatedSession, ownerKey, persistSession]
   );
 
   const setSuggestions = useCallback(
@@ -2143,6 +2286,8 @@ export function useSessions(options: UseSessionsOptions = {}) {
   return {
     sessions: sessionsForOwner,
     currentSession,
+    liveRouterProgress: currentSession ? liveRouterBySession[currentSession.id] : undefined,
+    updateLiveRouterProgress,
     currentSyncStatus: currentSession
       ? (
           syncState.ownerKey === ownerKey
@@ -2161,6 +2306,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
     truncateAndEdit,
     truncate,
     addAssistantMessage,
+    commitAgentRevision,
+    updateAgentReceipt,
+    markAgentTurnPending,
+    hasSession,
     addProgress,
     appendToLastThinking,
     appendToLastReasoning,
