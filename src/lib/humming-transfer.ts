@@ -251,10 +251,12 @@ export function isSafeChatMessageTransfer(value: unknown): boolean {
   if (value.progressKind !== undefined && typeof value.progressKind !== 'string') return false;
   const routerProgress = value.routerProgress;
   if (routerProgress !== undefined && (!isRecord(routerProgress)
-    || !Object.keys(routerProgress).every(key => ['kind', 'title', 'detail', 'durationMs', 'toolAction'].includes(key))
+    || !Object.keys(routerProgress).every(key => ['kind', 'title', 'detail', 'summary', 'application', 'durationMs', 'toolAction'].includes(key))
     || !['plan', 'tool', 'strategy', 'operation'].some(kind => kind === routerProgress.kind)
     || typeof routerProgress.title !== 'string'
     || (routerProgress.detail !== undefined && typeof routerProgress.detail !== 'string')
+    || (routerProgress.summary !== undefined && typeof routerProgress.summary !== 'string')
+    || (routerProgress.application !== undefined && typeof routerProgress.application !== 'string')
     || (routerProgress.toolAction !== undefined && typeof routerProgress.toolAction !== 'string')
     || (routerProgress.durationMs !== undefined
       && (!finite(routerProgress.durationMs) || Number(routerProgress.durationMs) < 0)))) return false;

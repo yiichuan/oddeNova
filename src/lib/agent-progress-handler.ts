@@ -31,17 +31,26 @@ export function createAgentProgressHandler(
       sessions.updateLiveRouterProgress?.(sessionId, current => ({ ...current, stage: event.stage, operation: undefined }));
       return;
     }
+    if (event.kind === 'router_reply_complete') {
+      sessions.updateLiveRouterProgress?.(sessionId, current => ({
+        ...current, reply: event.text, replyComplete: true,
+      }));
+      return;
+    }
     if (event.kind === 'router_reply_delta' || event.kind === 'router_reply_reset') {
       sessions.updateLiveRouterProgress?.(sessionId, current => ({
         ...current,
         reply: event.kind === 'router_reply_delta' ? (current.reply ?? '') + event.delta : undefined,
+        replyComplete: undefined,
       }));
       return;
     }
     if (event.kind === 'router_progress') {
       if (event.entry.kind === 'operation') {
         sessions.updateLiveRouterProgress?.(sessionId, current =>
-          current.stage === 'reply' ? current : { ...current, operation: event.entry.title });
+          !current.stage || current.stage === 'composition'
+            ? { ...current, operation: event.entry.title }
+            : current);
       }
       sessions.addProgress('router_progress', event.entry.title, { sessionId, routerProgress: event.entry });
       return;

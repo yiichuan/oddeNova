@@ -354,7 +354,7 @@ export const MRIDANGAM_SAMPLES: readonly string[] = [
 // Mirrors tidal-drum-machines-alias.json loaded at runtime via aliasBank().
 // Used to pre-populate SAMPLE_ALLOWLIST so the validator accepts alias tokens
 // like s("TR808_bd"), s("Linn_hh").
-const DRUM_MACHINE_ALIAS_MAP: Readonly<Record<string, string>> = {
+export const DRUM_MACHINE_ALIAS_MAP: Readonly<Record<string, string>> = {
   AJKPercusyn: 'Percysyn',
   AkaiLinn: 'Linn',
   AkaiMPC60: 'MPC60',

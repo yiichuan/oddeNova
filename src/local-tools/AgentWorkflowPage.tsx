@@ -265,7 +265,8 @@ function AgentWorkflowWorkspace({ signedIn, openAccount, reset, strudel }: {
               messages={messages} revisions={session?.revisions} ownerKey={ownerKey}
               liveRouterProgress={sessions.liveRouterProgress}
               isLoading={loading} pendingHumming={humming.pendingSubmission}
-              hummingWaveformToolCalled={humming.waveformToolCalled} onCancelHumming={humming.cancelTranscription}
+              hummingWaveformToolCalled={humming.waveformToolCalled}
+              onSelectChoice={choice && !busy && !humming.isTranscribing ? text => send(text, 'choice') : undefined}
               onRollback={rollback} onRetry={retry} onBranch={id => { if (!busy) sessions.branchFromMessage(id); }}
               draftCode={code} engineReady={strudel.engineReady}
               isPlaying={strudel.isPlaying} playingCode={strudel.activeCode} isStarting={strudel.isStarting}
@@ -279,7 +280,7 @@ function AgentWorkflowWorkspace({ signedIn, openAccount, reset, strudel }: {
               engineReady={strudel.engineReady} engineStatus={strudel.engineStatus} onReinitEngine={strudel.reinit}
               onStop={() => { if (sessionId) abortControllersRef.current.get(sessionId)?.abort(); }}
               onSendText={send} onMoodGenerate={mood} humming={humming}
-              inputMode={choice ? 'choice' : 'normal'} choiceOptions={choice?.options} suggestions={suggestions}
+              inputMode={choice ? 'choice' : 'normal'} suggestions={suggestions}
               prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} />
           </div>
         </section>

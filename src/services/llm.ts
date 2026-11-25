@@ -5,11 +5,11 @@ import { createSampleRetriever } from '../agent/sample-retriever';
 import { answerWithSessionResult, routeConversation, type RouterDecision, type SessionVersion, type TurnRef } from '../agent/router';
 import { traceModel, type AgentTraceSink } from '../lib/agent-trace';
 import { createScopeValidator, describeEditTargets, type EditScope } from '../agent/session-scope';
-import { createRouterProgress } from '../agent/router-progress';
-import type { RouterStage } from '../agent/progress';
+import { createRouterProgress, waitForProgress } from '../agent/router-progress';
+import { ROUTER_STREAM_BATCH_MS, ROUTER_STREAM_LINE_REVEAL_MS, type RouterStage } from '../agent/progress';
 import { SESSION_EXECUTION_PROMPT } from '../prompts/session-execution';
 import { inspectSession } from '../agent/session-inspection';
-import { buildHummingTurnReport, formatHummingContext, hasHummingWaveformReport } from '../lib/humming-context';
+import { buildHummingTurnReport, formatHummingContext, hasHummingWaveformReport, HUMMING_GRID_GUIDANCE } from '../lib/humming-context';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import type { HummingAttachment } from '../types/humming';
@@ -692,12 +692,23 @@ export async function runConversationTurn(request: ConversationRequest): Promise
     trace?.({ from: 'router', to: 'client', label: '发布进度', data: entry });
     onProgress({ kind: 'router_progress', entry });
   }) : undefined;
-  const stage = (value: RouterStage) => onProgress?.({ kind: 'router_stage', stage: value });
+  let activeStage: RouterStage | undefined;
+  const stage = (value: RouterStage) => {
+    if (activeStage === value) return;
+    activeStage = value;
+    onProgress?.({ kind: 'router_stage', stage: value });
+  };
   const answerUser = async (history: ChatMsg[], message: string, result: unknown) => {
     stage('reply');
     try {
-      return await answerWithSessionResult(router, history, message, result, signal, voice,
-        delta => onProgress?.({ kind: 'router_reply_delta', delta }));
+      const reply = await answerWithSessionResult(router, history, message, result, signal, voice,
+        onProgress && (delta => onProgress({ kind: 'router_reply_delta', delta })));
+      if (onProgress) {
+        onProgress({ kind: 'router_reply_complete', text: reply });
+        await waitForProgress(ROUTER_STREAM_BATCH_MS + ROUTER_STREAM_LINE_REVEAL_MS, signal);
+      }
+      signal.throwIfAborted();
+      return reply;
     } catch (error) {
       onProgress?.({ kind: 'router_reply_reset' });
       throw error;
@@ -713,8 +724,9 @@ export async function runConversationTurn(request: ConversationRequest): Promise
 
   async function run(): Promise<ConversationResult> {
     const waveform = hasHummingWaveformReport(humming) ? humming : undefined;
-    const instruction = formatHummingContext(text, humming, Boolean(waveform));
-    if (images?.length) stage('image');
+    // Router and its final-answer call do not have Session's waveform tool.
+    const instruction = formatHummingContext(text, humming, 'inline');
+    stage(images?.length ? 'image' : humming ? 'humming' : 'routing');
     const preparedUserContent = await prepareUserText(instruction, images, signal);
     if (humming) stage('humming');
     if (images?.length && preparedUserContent.startsWith(instruction)) {
@@ -729,6 +741,7 @@ export async function runConversationTurn(request: ConversationRequest): Promise
         previousRevision: previous?.revisionId, hasCode: Boolean(current.code.trim()), lastReceipt, humming } });
     const hasCode = Boolean(current.code.trim());
     const editTargets = describeEditTargets(current.code);
+    if (!isDemoMode()) stage('routing');
     const decision: RouterDecision = isDemoMode()
       ? { kind: 'execute', task: { scope: { kind: hasCode ? 'rewrite' : 'create' }, instruction: text, needsSynthesis: false } }
       : await routeConversation(router, preparedHistory, preparedUserContent, {
@@ -753,9 +766,14 @@ export async function runConversationTurn(request: ConversationRequest): Promise
     }
     if (decision.kind === 'inspect') {
       stage('analysis');
-      progress?.add({ kind: 'tool', facts: { action: 'inspect score versions', question: decision.question } });
       const inspectionStarted = performance.now();
       const facts = inspectSession(decision.question, current, previous);
+      progress?.add({ kind: 'tool', facts: {
+        action: 'inspect score versions',
+        question: decision.question,
+        currentScore: facts.current.score,
+        previousScore: facts.previous?.score,
+      } });
       trace?.({ from: 'session', to: 'router', label: '返回作品证据', data: facts, durationMs: performance.now() - inspectionStarted });
       await progress?.finish();
       const answer = await answerUser(preparedHistory, preparedUserContent, facts);
@@ -764,12 +782,8 @@ export async function runConversationTurn(request: ConversationRequest): Promise
     }
 
     const { task } = decision;
-    const plansStructure = task.scope.kind === 'create' || task.scope.kind === 'rewrite' || task.scope.kind === 'section';
-    if (plansStructure) progress?.add({ kind: 'plan', facts: {
-      nextStep: task.scope.kind === 'section' ? 'consider how to shape the requested section in context' : 'sketch the structure of the composition',
-      request: task.instruction,
-    } });
     let plannedSampleSearch = false;
+    let repairingCode = false;
     stage(waveform ? 'humming' : 'composition');
 
     const permitsEdit = createScopeValidator(task.scope, current.code);
@@ -793,6 +807,12 @@ export async function runConversationTurn(request: ConversationRequest): Promise
       imageReference,
       hummingReference: humming && !waveform ? buildHummingTurnReport(humming) : undefined,
       waveformAvailable: Boolean(waveform),
+      hummingInstruction: humming
+        ? [
+          waveform && 'Read the attached transcription with analyzeHummingWaveform before composing. Use the notes, timing and rests as the melody reference.',
+          HUMMING_GRID_GUIDANCE,
+        ].filter(Boolean).join(' ')
+        : undefined,
     });
     trace?.({ from: 'router', to: 'session', label: '传入实施任务与作品基线', data: { ref: request.ref, task, current } });
     const { explanation, ...result } = await executeMusic({
@@ -808,10 +828,14 @@ export async function runConversationTurn(request: ConversationRequest): Promise
       validateScope,
       onProgress: event => {
         if (event.kind === 'session_progress') {
+          // Keep repair status in the indicator and still retain tool titles
+          // for the completed turn. Repairs are internal, not musical edits.
+          if (repairingCode && event.entry.kind !== 'tool') return;
           if (event.entry.kind === 'strategy') stage('structure');
           progress?.add(event.entry);
           return;
         }
+        if (event.kind === 'iteration' && event.index > 1 && !repairingCode) stage('composition');
         if (event.kind === 'tool_call') {
           switch (event.name) {
             case 'analyzeHummingWaveform': stage('humming'); break;
@@ -823,15 +847,20 @@ export async function runConversationTurn(request: ConversationRequest): Promise
                   queries: event.args.queries,
                 } });
               }
-              stage('analysis');
+              stage('search');
               break;
             case 'getScore': stage('analysis'); break;
-            case 'setCode': stage('composition'); break;
+            case 'setCode': stage(repairingCode ? 'repair' : 'composition'); break;
             case 'validate':
             case 'commit': stage('validation'); break;
           }
-        } else if (event.kind === 'tool_result' && event.name === 'analyzeHummingWaveform') {
-          stage('analysis');
+        } else if (event.kind === 'tool_result') {
+          if (event.name === 'validate' || event.name === 'commit') {
+            repairingCode = !event.ok;
+            if (repairingCode) stage('repair');
+          } else if (event.name === 'analyzeHummingWaveform' || event.name === 'searchSamples') {
+            stage('analysis');
+          }
         }
         onProgress?.(event);
       },

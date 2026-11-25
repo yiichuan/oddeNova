@@ -2606,9 +2606,9 @@ export default function App() {
               liveRouterProgress={sessions.liveRouterProgress}
               pendingHumming={hummingInput.pendingSubmission}
               hummingWaveformToolCalled={hummingInput.waveformToolCalled}
-              onCancelHumming={cancelHummingTranscription}
               revisions={sessions.currentSession?.revisions}
               isLoading={isLoading}
+              onSelectChoice={pendingStepwiseChoice ? text => handleChatInstruction(text, 'choice') : undefined}
               onRollback={handleRollback}
               onBranch={sessions.branchFromMessage}
               onRetry={handleRetry}
@@ -2675,7 +2675,6 @@ export default function App() {
               focusTrigger={inputFocusTrigger}
               onFocusChange={handleChatFocusChange}
               inputMode={composerInputMode}
-              choiceOptions={pendingStepwiseChoice?.options}
               suggestions={isVideoMode ? [] : visibleSuggestions}
               isVideoMode={isVideoMode}
               signedIn={Boolean(auth.user)}
@@ -3020,7 +3019,6 @@ export default function App() {
               sessions={historyItems}
               currentId={sessions.currentId}
               inputMode={composerInputMode}
-              choiceOptions={pendingStepwiseChoice?.options}
               suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
               isVideoMode={isVideoMode}
               scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal

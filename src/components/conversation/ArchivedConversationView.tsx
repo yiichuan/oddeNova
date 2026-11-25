@@ -236,8 +236,8 @@ export default function ArchivedConversationView({
   const routerProcess = useMemo(() => groupRouterProcess(messages), [messages]);
   const visibleMessages = useMemo(
     () => messages.filter((message) => (
-      message.role !== 'progress' || arrangeReasoningIds.has(message.id)
-      || routerProcess.groups.has(message.id)
+      routerProcess.groupOf.has(message.id) ? routerProcess.groups.has(message.id)
+        : message.role !== 'progress' || arrangeReasoningIds.has(message.id)
     )),
     [messages, arrangeReasoningIds, routerProcess],
   );
@@ -425,7 +425,8 @@ export default function ArchivedConversationView({
           const process = routerProcess.groups.get(message.id);
           if (process) return <RouterProcessView key={message.id} id={message.id} process={process}
             expanded={expandedReasoning.has(message.id)} onToggle={() => toggleReasoning(message.id)}
-            markSize={markSize} formatDuration={formatThinkDuration} />;
+            markSize={markSize} formatDuration={formatThinkDuration}
+            renderNarration={content => <MarkdownText content={content} />} />;
           if (message.role === 'progress') {
             const expanded = expandedReasoning.has(message.id);
             return (

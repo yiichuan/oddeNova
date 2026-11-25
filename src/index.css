@@ -554,13 +554,15 @@ body {
   overflow-y: auto;
 }
 
-[data-sidebar-message-region]:has(+ [data-sidebar-composer] [data-chat-choice-options]) {
-  border-bottom-color: transparent;
+@media (prefers-reduced-motion: no-preference) {
+  .conversation-selected-choice {
+    animation: conversation-selected-choice-in 200ms ease-in-out both;
+  }
 }
 
-[data-sidebar-composer] [data-chat-choice-options] {
-  border-inline: 1px solid var(--color-border);
-  padding-inline: 15px;
+@keyframes conversation-selected-choice-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .chat-input-surface {
@@ -2865,6 +2867,14 @@ html[data-theme='light'] .history-search-field {
 }
 
 .conversation-scroll { container-type: size; overflow-anchor: none; }
+
+[data-live-router-reply]:has(> [data-markdown-text]:empty) {
+  display: none;
+}
+
+[data-live-router-reply]:has(> [data-markdown-text]:not(:empty)) + [data-live-reply-heading] {
+  padding-top: 12px;
+}
 
 /* While the first-run guide is walking a turn through the conversation
    (html[data-guide-active], set by App), its scrollbars are hidden: the

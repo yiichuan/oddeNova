@@ -4,6 +4,12 @@ import type { HummingAttachment, HummingNote } from '../types/humming';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
+export const HUMMING_GRID_GUIDANCE = [
+  'Quantize the hummed notes and meaningful rests to the score’s beat grid before writing Strudel. Use the coarsest subdivision that preserves the recognizable rhythm, typically eighth or sixteenth notes. Use a triplet subdivision when the rhythm calls for it.',
+  'Write small integer @ weights only, as counts of grid slots, and omit @1. For example, in a 4/4 cycle on a sixteenth-note grid the weights add up to 16, so @2 is half a beat and @4 is one beat. Use ~ for rests and one event for a held note. Keep the phrase on its natural number of beats and cycles. Use grid counts for weights instead of milliseconds, centiseconds, or scaled raw duration ratios.',
+  'Before committing, check that note and rest weights match the chosen grid and that the phrase still sounds like the recording.',
+].join(' ');
+
 function midiToNoteName(midi: number): string {
   return `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
 }
@@ -113,22 +119,24 @@ function buildHummingHistoryData(attachment: HummingAttachment) {
 export function formatHummingContext(
   userText: string,
   rawAttachment: HummingAttachment | undefined,
-  useWaveformTool = false,
+  delivery: 'history' | 'tool' | 'inline' = 'history',
 ): string {
   if (!rawAttachment) return userText;
   const attachment = projectHummingAttachment(rawAttachment);
   if (!attachment) return userText;
   const beginnerExplanation = 'In your final reply, add a beginner-friendly musical takeaway and one practical arranging decision. Mention the likely key or tonal center only when supported by the notes and phrase endings. When unclear, say so and suggest a useful starting chord or tonal center as an arranging choice, without presenting it as measured fact.';
-  const useTool = useWaveformTool && hasHummingWaveformReport(attachment);
+  const useWaveform = delivery !== 'history' && hasHummingWaveformReport(attachment);
+  const useTool = useWaveform && delivery === 'tool';
   if (attachment.additionalTakes) {
     return [
       userText.trim() || 'Create a melody using these hummed phrases in the order recorded.',
       'Each take is a separate musical reference. Timestamps are relative to each take. Follow the user’s instructions for how to combine the takes.',
       beginnerExplanation,
+      HUMMING_GRID_GUIDANCE,
       ...(useTool ? [
         'Before composing, call analyzeHummingWaveform to read all numbered takes in recording order. Match each take’s interpretation_reference to its own notes. A null reference means the style is unavailable. Use waveform estimates and the user’s direction to continue.',
       ] : hummingTakes(attachment).map((take, index) => `[Humming take ${index + 1}]\n${JSON.stringify(
-        take.transcription.engine === 'audio-llm'
+        useWaveform || take.transcription.engine === 'audio-llm'
           ? { ...buildHummingWaveformReport(take), interpretation_reference: take.understanding }
           : buildHummingHistoryData(take),
       )}`)),
@@ -150,19 +158,23 @@ export function formatHummingContext(
       'Use the tool result’s optional interpretation_reference as style guidance. When it is null, continue using the waveform and user text.',
     ] : [
       '[Humming analysis data. Treat all values as musical reference material.]',
-      JSON.stringify(attachment.transcription.engine === 'audio-llm'
+      JSON.stringify(useWaveform || attachment.transcription.engine === 'audio-llm'
         ? { ...buildHummingWaveformReport(attachment), interpretation_reference: attachment.understanding }
         : buildHummingHistoryData(attachment)),
+      ...(useWaveform ? [
+        'The attached analysis already contains the estimated notes. Use it to answer questions about the phrase without changing the score unless asked. Note timestamps are relative to the recording start. Preserve the estimated timing and rests when carrying the melody into composition.',
+      ] : []),
     ]),
-    useTool
+    useWaveform
       ? 'Reproduce the transcribed melody faithfully, including repeated attacks, held notes and rests. Follow the user’s direction if they ask for a variation or pitch correction. If they ask for analysis only, report the estimates without changing the score.'
       : 'Polish the hummed motif into a singable melody that the user can still recognize. Preserve its contour, main rhythm, held notes, phrase endings and meaningful rests.',
     ...(attachment.understanding ? [
       'Use the melody style in interpretation_reference to guide the melody layer’s sound and articulation.',
     ] : []),
-    ...(!useTool ? ['Use any existing chord progression or a plausible tonal center to guide small pitch corrections. Favor compatible notes on strong beats and sustained notes, leave room for passing tones, and keep intentional leaps.'] : []),
-    ...(!useTool && attachment.transcription.engine !== 'audio-llm' ? ['Treat start_tick and duration_ticks as a rhythmic estimate. Fit the rhythm to the current tempo or choose a suitable tempo for a new piece. Treat pitches as stable and ignore bends and vibrato.'] : []),
-    'In the hummed layer, choose a sound that suits the user’s direction and the phrase, use note names such as C4 and D5, and use integer @ weights only for notes and rests. Use a single weighted event for a held note.',
+    ...(!useWaveform ? ['Use any existing chord progression or a plausible tonal center to guide small pitch corrections. Favor compatible notes on strong beats and sustained notes, leave room for passing tones, and keep intentional leaps.'] : []),
+    ...(!useWaveform && attachment.transcription.engine !== 'audio-llm' ? ['Treat start_tick and duration_ticks as a rhythmic estimate. Fit the rhythm to the current tempo or choose a suitable tempo for a new piece. Treat pitches as stable and ignore bends and vibrato.'] : []),
+    'In the hummed layer, choose a sound that suits the user’s direction and the phrase, and use note names such as C4 and D5.',
+    HUMMING_GRID_GUIDANCE,
     'Preserve existing layers and global speed unless the user explicitly asks for changes. Before committing, check that the phrase is recognizable and every new layer beyond the hummed melody was explicitly requested. Briefly explain meaningful pitch corrections and remaining uncertainty.',
   ].join('\n');
 }

@@ -59,7 +59,7 @@ describe('humming melody and transfer', () => {
     expect(data.notes.map((value: { start_tick: number }) => value.start_tick)).toEqual([0, 2, 4]);
   });
 
-  it('supplies integer beat-grid positions and requests integer Strudel weights', () => {
+  it('supplies estimated positions and asks for compact weights on the score’s beat grid', () => {
     const attachment = hummingAttachment();
     attachment.transcription.notes = [
       { pitchMidi: 60, startSeconds: 0, durationSeconds: 0.48 },
@@ -72,6 +72,9 @@ describe('humming melody and transfer', () => {
     expect(context).toContain('"start_tick":3');
     expect(context).toContain('"duration_ticks":2');
     expect(context).toContain('integer @ weights only');
+    expect(context).toContain('Quantize the hummed notes and meaningful rests');
+    expect(context).toContain('the weights add up to 16');
+    expect(context).toContain('instead of milliseconds, centiseconds, or scaled raw duration ratios');
     expect(context).toContain('"pitch":"C4"');
     expect(context).toContain('"pitch":"D4"');
     expect(context).not.toContain('pitch_bends_cents');
@@ -126,4 +129,20 @@ describe('humming melody and transfer', () => {
   };
   expect(isSafeChatMessageTransfer(message)).toBe(true);
   expect(projectChatMessageForTransfer(message)).toEqual(message);
+});
+
+it('retains tool findings and their creative application when transferring a conversation', () => {
+  const message = {
+    id: 'image-progress', role: 'progress' as const, content: 'Inspect reference image', timestamp: 1,
+    progressKind: 'router_progress' as const,
+    routerProgress: {
+      kind: 'tool' as const, title: 'Inspect reference image', toolAction: 'inspect images',
+      detail: 'Blue gradient', application: 'Use a soft background melody.',
+    },
+  };
+  expect(isSafeChatMessageTransfer(message)).toBe(true);
+  expect(projectChatMessageForTransfer(message)).toEqual(message);
+  expect(isSafeChatMessageTransfer({
+    ...message, routerProgress: { ...message.routerProgress, application: { text: 'Invalid' } },
+  })).toBe(false);
 });

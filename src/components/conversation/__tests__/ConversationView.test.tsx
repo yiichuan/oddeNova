@@ -50,6 +50,7 @@ type PlaybackProps = {
   /** Overrides the helper's own, so one render can run a turn and the next end
    *  it — which is what arms the turn anchor. */
   isLoading?: boolean;
+  onSelectChoice?: React.ComponentProps<typeof ConversationView>['onSelectChoice'];
   liveRouterProgress?: React.ComponentProps<typeof ConversationView>['liveRouterProgress'];
   /** Which key started what is sounding, and the code it put on. */
   pressedSegmentId?: string | null;
@@ -96,7 +97,7 @@ function renderConversationView(
   onRollback = vi.fn(),
   isLoading = false,
   revisions?: CodeRevision[],
-  playback: PlaybackProps & Pick<React.ComponentProps<typeof ConversationView>, 'pendingHumming' | 'hummingWaveformToolCalled' | 'onCancelHumming'> = {},
+  playback: PlaybackProps & Pick<React.ComponentProps<typeof ConversationView>, 'pendingHumming' | 'hummingWaveformToolCalled'> = {},
   ownerKey?: string,
 ) {
   const container = document.createElement('div');
@@ -126,6 +127,7 @@ function renderConversationView(
 
 it('groups completed Router progress under Process and puts code tools under Completion', () => {
   setMobileViewport(false);
+  vi.useFakeTimers();
   const user: ChatMessage = { id: 'u', role: 'user', content: 'Arrange this', timestamp: 1 };
   const progress = (id: string, entry: NonNullable<ChatMessage['routerProgress']>): ChatMessage => ({
     id, role: 'progress', progressKind: 'router_progress', content: entry.title, routerProgress: entry, timestamp: 2,
@@ -133,7 +135,8 @@ it('groups completed Router progress under Process and puts code tools under Com
   const messages = [
     user,
     progress('p', { kind: 'plan', title: 'I’ll listen first' }),
-    progress('t', { kind: 'tool', title: 'Reading the waveform', detail: 'Detected five notes' }),
+    progress('t', { kind: 'tool', title: 'Reading the waveform', detail: 'Detected five notes',
+      application: 'I will keep the five-note contour in the keyboard part.' }),
     progress('s', { kind: 'strategy', title: 'Strategy', detail: 'Use piano for clarity', durationMs: 3200 }),
     progress('o1', { kind: 'operation', title: 'Writing drums', detail: 'Sparse kick on the downbeat' }),
     progress('o2', { kind: 'operation', title: 'Writing piano', detail: 'Long release connects the chords' }),
@@ -149,18 +152,41 @@ it('groups completed Router progress under Process and puts code tools under Com
     const processButton = () => container.querySelector<HTMLButtonElement>('[data-action-process-toggle]');
     const disclosure = (kind: string) => container.querySelector<HTMLDetailsElement>(`details[data-router-progress="${kind}"]`);
     expect(heading.textContent).toContain(t('routerStageHumming'));
-    expect(heading.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(plan.textContent).toContain('I’ll listen first');
-    for (const kind of ['tool', 'strategy']) expect(disclosure(kind)?.open).toBe(true);
+    expect(plan.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(plan.textContent).toBe('I’ll listen first');
+    expect(container.textContent).not.toContain('Testing syntax');
+    expect(container.textContent).not.toContain('Syntax passed');
+    const tool = container.querySelector('[data-router-progress="tool"]')!;
+    expect(disclosure('tool')).toBeNull();
+    expect(disclosure('strategy')?.open).toBe(true);
+    expect(tool.querySelector('[data-router-tool-title] .lucide-ear')).not.toBeNull();
+    expect(tool.querySelector('[data-router-tool-text]')?.textContent)
+      .toBe('Detected five notes I will keep the five-note contour in the keyboard part.');
+    act(() => vi.advanceTimersByTime(4000));
+    expect(heading.textContent).toBe(t('routerStageHumming'));
     expect(disclosure('strategy')?.querySelector('summary')?.textContent).toContain('3s');
     expect(disclosure('arrangement')).toBeNull();
     expect(processButton()).toBeNull();
 
-    render({ isLoading: true, liveRouterProgress: { operation: 'Writing piano', reply: 'Here is' } });
+    render({ isLoading: true, liveRouterProgress: { operation: 'Writing piano', reply: 'Here is the first line.' } });
+    act(() => vi.advanceTimersByTime(64));
+    const completeParagraph = 'Here is the first line.\nAnd here is the second.';
+    render({ isLoading: true, liveRouterProgress: { operation: 'Writing piano', reply: `${completeParagraph}\n\n- First choice\n- Sec` } });
+    expect(container.querySelector('[data-live-router-reply]')).toBeNull();
+    act(() => vi.advanceTimersByTime(336));
     expect(container.querySelector('[data-live-reply-heading]')).toBe(heading);
     expect(heading.textContent).toContain('Writing piano');
     expect(container.querySelector('[data-router-progress="operation"]')?.textContent).toBe('Sparse kick on the downbeat');
-    expect(container.querySelector('[data-live-router-reply]')?.textContent).toContain('Here is');
+    const liveReply = () => container.querySelector('[data-live-router-reply]')?.textContent;
+    expect(container.querySelector('[data-live-router-reply]')?.nextElementSibling).toBe(heading);
+    expect(liveReply()).toContain('Here is the first');
+    expect(liveReply()).toContain('And here is the second.');
+    expect(liveReply()).not.toContain('First choice');
+    render({ isLoading: true, liveRouterProgress: {
+      reply: `${completeParagraph}\n\n- First choice\n- Second choice`, replyComplete: true,
+    } });
+    act(() => vi.advanceTimersByTime(400));
+    expect(container.querySelectorAll('[data-live-router-reply] li')).toHaveLength(2);
 
     render({ isLoading: false }, [...messages, { id: 'done', role: 'assistant', content: 'Here is your piece.', timestamp: 3 }]);
     expect(container.querySelector('[data-live-reply-heading]')).toBeNull();
@@ -168,20 +194,34 @@ it('groups completed Router progress under Process and puts code tools under Com
     expect(processButton()?.getAttribute('aria-expanded')).toBe('false');
     expect(container.querySelector('[data-router-progress]')).toBeNull();
     act(() => processButton()?.click());
-    for (const kind of ['tool', 'strategy', 'arrangement', 'completion']) expect(disclosure(kind)?.open).toBe(false);
-    expect(container.querySelectorAll('details[data-router-progress="tool"]')).toHaveLength(1);
+    for (const kind of ['strategy', 'arrangement', 'completion']) expect(disclosure(kind)?.open).toBe(false);
+    expect(container.querySelectorAll('[data-router-progress="tool"]')).toHaveLength(1);
     expect(disclosure('completion')?.querySelectorAll('li')).toHaveLength(2);
-    expect(disclosure('completion')?.textContent).toContain('Syntax passed');
+    expect(disclosure('completion')?.querySelector('li details')).toBeNull();
+    expect(disclosure('completion')?.querySelector('li:first-child .lucide-file-check')).not.toBeNull();
+    expect(disclosure('completion')?.querySelector('li:last-child .lucide-circle-check')).not.toBeNull();
+    expect(disclosure('completion')?.textContent).toContain('Testing syntax');
+    expect(disclosure('completion')?.textContent).not.toContain('Syntax passed');
     expect(disclosure('arrangement')?.querySelectorAll('li')).toHaveLength(2);
     expect(container.querySelector('[data-router-progress="plan"]')?.textContent).toContain('I’ll listen first');
   } finally {
     act(() => root.unmount());
     container.remove();
+    vi.useRealTimers();
   }
 });
 
-it('anchors the new user bubble before following overflowing Router text', () => {
+it('glides to each Router batch before revealing it and holds position when the status gets shorter', () => {
   setMobileViewport(false);
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'requestAnimationFrame', 'cancelAnimationFrame'] });
+  const createRange = document.createRange.bind(document);
+  const measureLines = vi.spyOn(document, 'createRange').mockImplementation(() => {
+    const range = createRange();
+    Object.defineProperty(range, 'getClientRects', {
+      value: () => [new DOMRect(0, 0, 200, 24), new DOMRect(0, 24, 160, 24)],
+    });
+    return range;
+  });
   const user: ChatMessage = { id: 'u', role: 'user', content: 'Arrange this', timestamp: 1 };
   const { container, root, render } = renderConversationView([user]);
   try {
@@ -198,27 +238,93 @@ it('anchors the new user bubble before following overflowing Router text', () =>
     const scrollTo = vi.fn();
     box.scrollTo = scrollTo;
     box.scrollTop = 0;
-    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: 'First line' } });
+    render({ isLoading: true, liveRouterProgress: { stage: 'reply' } });
     expect(scrollTo).toHaveBeenCalledWith({ top: 200, behavior: 'smooth' });
-    const header = container.querySelector('[data-live-reply-heading]')!;
-    const tail = container.querySelector<HTMLElement>('[data-live-reply-tail]')!;
+    const header = container.querySelector<HTMLElement>('[data-live-reply-heading]')!;
+    const statusContent = header.firstElementChild as HTMLElement;
+    const animateStatus = vi.fn();
+    Object.defineProperty(statusContent, 'animate', { value: animateStatus });
     let bottom = 850;
-    stubRect(tail, () => ({ top: bottom - box.scrollTop, bottom: bottom - box.scrollTop }));
-    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: 'First line and more' } });
+    stubRect(header, () => ({ top: bottom - box.scrollTop - 24, bottom: bottom - box.scrollTop }));
+    stubRect(statusContent, () => ({ top: bottom - box.scrollTop - 24, bottom: bottom - box.scrollTop }));
+    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: 'First line and more\n\n' } });
     expect(box.scrollTop).toBe(0);
-    act(() => {
-      box.scrollTop = 200;
-      box.dispatchEvent(new Event('scroll'));
-    });
+    act(() => vi.advanceTimersByTime(400));
+    expect(box.scrollTop).toBe(0);
+    act(() => vi.advanceTimersByTime(112));
+    expect(box.scrollTop).toBeGreaterThan(0);
+    expect(box.scrollTop).toBeLessThan(366);
+    act(() => vi.advanceTimersByTime(128));
     expect(box.scrollTop).toBe(366);
+    const reply = container.querySelector<HTMLElement>('[data-live-router-reply]')!;
+    const animate = vi.fn();
+    const blurAnimation = { cancel: vi.fn(), onfinish: null as (() => void) | null };
+    const animateBlur = vi.fn(() => blurAnimation);
+    const cloneNode = reply.cloneNode.bind(reply);
+    Object.defineProperties(reply, {
+      animate: { configurable: true, value: animate },
+      offsetHeight: { configurable: true, value: 72 },
+      cloneNode: { configurable: true, value: () => {
+        const clone = cloneNode(true);
+        Object.defineProperty(clone, 'animate', { value: animateBlur });
+        return clone;
+      } },
+    });
     bottom = 1000;
-    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: 'Latest line' } });
+    const latest = 'Latest line\nSecond line\n\n';
+    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: latest } });
+    act(() => vi.advanceTimersByTime(400));
+    expect(box.scrollTop).toBe(366);
+    expect(animateStatus).toHaveBeenLastCalledWith([
+      { transform: 'translateY(-150px)' }, { transform: 'translateY(0)' },
+    ], expect.objectContaining({ duration: 220 }));
+    const timing = { delay: 220, duration: 960, fill: 'backwards' };
+    expect(animate).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ offset: 0.09, maskPosition: '0px 0px, 100% 0px' }),
+      expect.objectContaining({ offset: 0.41, maskPosition: expect.not.stringContaining(', 100% ') }),
+      expect.objectContaining({ offset: 0.5, maskPosition: '0px 0px, 100% 24px' }),
+    ]), timing);
+    expect(animateBlur).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ offset: 0.09, maskComposite: 'subtract', maskPosition: expect.stringMatching(/^[^1].*% 0px, 100% 0px$/) }),
+      expect.objectContaining({ offset: 0.41, maskComposite: 'subtract', maskPosition: expect.stringMatching(/^0% 0px, [^0].*% 0px$/) }),
+    ]), timing);
+    act(() => vi.advanceTimersByTime(224));
     expect(box.scrollTop).toBe(516);
+    const blurLayer = Array.from(box.querySelectorAll<HTMLElement>('[aria-hidden="true"]'))
+      .find(element => element.style.filter === 'blur(2px)');
+    expect(blurLayer?.textContent).toContain('Second line');
+    blurAnimation.onfinish?.();
+    expect(blurLayer?.isConnected).toBe(false);
     expect(container.querySelector('[data-live-reply-heading]')).toBe(header);
-    expect(header.classList.contains('sticky')).toBe(true);
+    expect(header.classList.contains('sticky')).toBe(false);
+    expect(container.querySelector('[data-live-router-reply]')?.nextElementSibling).toBe(header);
+    bottom = 974;
+    render({ isLoading: true, liveRouterProgress: { stage: 'validation', reply: latest } });
+    act(() => vi.advanceTimersByTime(400));
+    expect(header.textContent).toContain(t('routerStageReply'));
+    act(() => vi.advanceTimersByTime(560));
+    expect(header.textContent).toContain(t('routerStageValidation'));
+    expect(box.scrollTop).toBe(516);
+
+    const completedText = 'This is the completed reply.\nIts last line is ready.';
+    render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: completedText, replyComplete: true } });
+    render({ isLoading: false }, [user, { id: 'done', role: 'assistant', content: completedText, timestamp: 2 }]);
+    expect(container.querySelector('[data-live-router-reply]')?.textContent).toContain('Its last line is ready.');
+    act(() => vi.advanceTimersByTime(400));
+    expect(container.querySelector('[data-live-reply-heading]')).not.toBeNull();
+    act(() => vi.advanceTimersByTime(560));
+    expect(container.querySelector('[data-live-reply-heading]')).toBeNull();
+    expect(container.querySelector('[data-message-id="done"]')?.textContent).toContain('Its last line is ready.');
+    expect(box.scrollTop).toBe(1000);
+    act(() => box.dispatchEvent(new Event('wheel')));
+    const positionAfterTakeover = box.scrollTop;
+    act(() => vi.advanceTimersByTime(240));
+    expect(box.scrollTop).toBe(positionAfterTakeover);
   } finally {
     act(() => root.unmount());
     container.remove();
+    measureLines.mockRestore();
+    vi.useRealTimers();
   }
 });
 
@@ -662,6 +768,42 @@ describe('ConversationView chat streaming', () => {
     expect(container.querySelectorAll('li')).toHaveLength(2);
   });
 
+  it('highlights chord and root progressions in the action summary and combines repeated opening plans', () => {
+    setMobileViewport(false);
+    const first = '我会先拟一遍整首曲子的走向，让追光的情绪一步步往上走。';
+    const latest = '我会先把整首曲子的走向铺出来，让你听见光怎么一点点亮起来。';
+    const plan = (id: string, title: string): ChatMessage => ({
+      id, role: 'progress', content: title, timestamp: 2, routerProgress: { kind: 'plan', title },
+    });
+    const messages: ChatMessage[] = [
+      { id: 'user', role: 'user', content: '写一首追光的曲子', timestamp: 1 },
+      plan('opening-plan', first),
+      plan('session-plan', latest),
+      plan('sound-plan', '我会去找几种能托住黄昏感的音色。'),
+      {
+        id: 'strategy', role: 'progress', content: '构思', timestamp: 3,
+        routerProgress: {
+          kind: 'strategy', title: '构思', detail: '调性定在 D 大调。',
+          summary: '和弦走 Dadd9–Em7–Gadd9–Aadd9，根音 D→E→G→A。TR-909（鼓机）伴奏，接着演奏 C4–E♭4。',
+        },
+      },
+      { id: 'answer', role: 'assistant', content: '编曲好了。', timestamp: 4 },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+    act(() => container.querySelector<HTMLButtonElement>('[data-action-process-toggle="opening-plan"]')!.click());
+    expect(container.textContent).not.toContain(first);
+    expect(container.textContent).toContain(latest);
+    expect(container.textContent).toContain('托住黄昏感的音色');
+    const summary = container.querySelector('[data-router-progress-summary]')!;
+    expect(Array.from(summary.querySelectorAll('[data-music-token="harmony"]'), item => item.textContent))
+      .toEqual(['Dadd9–Em7–Gadd9–Aadd9', 'D→E→G→A']);
+    expect(Array.from(summary.querySelectorAll('[data-music-token="pitch"]'), item => item.textContent))
+      .toEqual(['C4', 'E♭4']);
+    expect(Array.from(summary.querySelectorAll('[data-music-token="sample"]'), item => item.textContent))
+      .toEqual(['TR-909']);
+  });
+
   it('renders aligned Chinese GFM tables with formatted and escaped cell content', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [{
@@ -758,7 +900,7 @@ describe('ConversationView chat streaming', () => {
     expect(container.textContent).toContain('<script>alert(1)</script>');
   });
 
-  it('keeps the checkpoint question in the conversation and moves its options to the composer', () => {
+  it('shows checkpoint options under the reply and keeps only the selected user reply', async () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [{
       id: 'choice-checkpoint',
@@ -774,7 +916,8 @@ describe('ConversationView chat streaming', () => {
       ].join('\n'),
       timestamp: 1,
     }];
-    const { container, root, render } = renderConversationView(messages);
+    const onSelectChoice = vi.fn().mockRejectedValueOnce(new Error('Session changed')).mockResolvedValue(undefined);
+    const { container, root, render } = renderConversationView(messages, vi.fn(), false, undefined, { onSelectChoice });
     roots.push(root);
 
     const rendered = container.querySelector('[data-markdown-text]');
@@ -784,10 +927,31 @@ describe('ConversationView chat streaming', () => {
     expect(rendered?.querySelector('ol')).toBeNull();
     expect(container.querySelector('details')).toBeNull();
 
-    render({}, [...messages, { id: 'answer', role: 'user', content: '加定音鼓', timestamp: 2 }]);
-    const history = container.querySelector('details');
-    expect(history?.open).toBe(false);
-    expect(history?.querySelectorAll('li')).toHaveLength(2);
+    const choices = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-chat-choice-options] button'));
+    expect(choices).toHaveLength(2);
+    expect(choices[0].closest('[data-message-id="choice-checkpoint"]')).not.toBeNull();
+    vi.useFakeTimers();
+    try {
+      act(() => { choices[0].click(); choices[1].click(); });
+      expect(choices[1].getAttribute('aria-hidden')).toBe('true');
+      expect(onSelectChoice).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(onSelectChoice).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe('Session changed');
+      expect(choices[1].disabled).toBe(false);
+
+      act(() => choices[1].click());
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(onSelectChoice).toHaveBeenLastCalledWith('让合唱在最后两个和弦处稍微走近、变亮一点');
+      render({ onSelectChoice }, [...messages, {
+        id: 'answer', role: 'user', content: '让合唱在最后两个和弦处稍微走近、变亮一点', selectedChoice: true, timestamp: 2,
+      }]);
+      expect(container.querySelector('[data-chat-choice-options]')).toBeNull();
+      expect(container.querySelector('details')).toBeNull();
+      expect(container.querySelector('[data-selected-choice]')?.textContent).toContain('让合唱在最后两个和弦处稍微走近、变亮一点');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps footnote targets unique across separate assistant messages', () => {
@@ -1016,7 +1180,7 @@ describe('ConversationView chat streaming', () => {
     expect(scrollBox?.className).toContain('overflow-y-auto');
   });
 
-  it('leaves the streamed reasoning where it is and jumps a window past its last line', () => {
+  it('follows streamed reasoning until the reader scrolls back, then offers a jump to the live end', () => {
     setMobileViewport(false);
     // happy-dom lays nothing out and never resizes, so the window's geometry,
     // and the observer that reports changes to it, are driven by hand here.
@@ -1053,10 +1217,11 @@ describe('ConversationView chat streaming', () => {
       act(() => resize.fire());
       expect(container.querySelector('[data-reasoning-jump-latest]')).toBeNull();
 
-      // It outgrows the window, and the way to the live end is offered.
+      // It outgrows the window and the latest reasoning is revealed.
       contentHeight = 1200;
       act(() => resize.fire());
-      expect(container.querySelector('[data-reasoning-jump-latest]')).not.toBeNull();
+      expect(scrollBox!.scrollTop).toBe(900);
+      expect(container.querySelector('[data-reasoning-jump-latest]')).toBeNull();
 
       // Where the reader put the window, and where more text finds it: the
       // stream does not drag it along.
@@ -1064,6 +1229,7 @@ describe('ConversationView chat streaming', () => {
         scrollBox!.scrollTop = 100;
         scrollBox!.dispatchEvent(new Event('scroll'));
       });
+      expect(container.querySelector('[data-reasoning-jump-latest]')).not.toBeNull();
       contentHeight = 1500;
       render(undefined, [messages[0], { ...reasoning, content: `${reasoning.content}继续推理` }]);
       act(() => resize.fire());
@@ -1208,6 +1374,8 @@ describe('ConversationView chat streaming', () => {
     box.scrollTo = ((options: ScrollToOptions) => { box.scrollTop = options.top ?? 0; }) as typeof box.scrollTo;
     render({ isLoading: true }, [user, reasoning]);
     expect(box.scrollTop).toBe(200);
+    const status = box.querySelector<HTMLElement>('[data-live-reply-heading]')!;
+    stubRect(status, () => ({ top: 600 - box.scrollTop, bottom: 624 - box.scrollTop }));
     act(() => box.dispatchEvent(new Event('scroll')));
 
     act(() => {
@@ -1215,9 +1383,9 @@ describe('ConversationView chat streaming', () => {
       box.scrollTop = scrollTop;
       box.dispatchEvent(new Event('scroll'));
     });
-    render(undefined, [user, { ...reasoning, content: '继续检查鼓点' }]);
+    render({ isLoading: true }, [user, { ...reasoning, content: '继续检查鼓点' }]);
     expect(box.scrollTop).toBe(scrollTop);
-    render(undefined, [user, { ...reasoning, content: '继续检查鼓点和贝斯' }]);
+    render({ isLoading: true }, [user, { ...reasoning, content: '继续检查鼓点和贝斯' }]);
     expect(box.scrollTop).toBe(scrollTop);
 
     // Returning to the actual turn anchor still resumes automatic positioning.
@@ -1226,7 +1394,7 @@ describe('ConversationView chat streaming', () => {
       box.dispatchEvent(new Event('scroll'));
     });
     Object.defineProperty(bubble, 'offsetTop', { configurable: true, value: 250 });
-    render(undefined, [user, { ...reasoning, content: '检查完成' }]);
+    render({ isLoading: true }, [user, { ...reasoning, content: '检查完成' }]);
     expect(box.scrollTop).toBe(250);
   });
 
@@ -1274,7 +1442,7 @@ describe('ConversationView chat streaming', () => {
       render({ isLoading: false }, [user, {
         id: 'a1', role: 'assistant', content: '好了', timestamp: 3,
       }]);
-      expect(box.scrollTop).toBe(200);
+      expect(box.scrollTop).toBe(1050);
     } finally {
       resize.restore();
     }
@@ -1326,7 +1494,7 @@ describe('ConversationView chat streaming', () => {
     render({ isLoading: false }, [user, reasoning, preparing, {
       id: 'a1', role: 'assistant', content: '好了', timestamp: 4,
     }]);
-    expect(box.scrollTop).toBe(200);
+    expect(box.scrollTop).toBe(1000);
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
@@ -1350,7 +1518,7 @@ describe('ConversationView chat streaming', () => {
     expect(summary.textContent).toContain('Sharp attack');
     expect(summary.textContent).not.toContain('Fine hi-hats');
     expect(container.textContent).not.toContain(search.content);
-    expect(container.querySelector('.thinking-lottie')).not.toBeNull();
+    expect(container.querySelector('[data-agent-stage-animation="search"] svg.lucide-search')).not.toBeNull();
     act(() => summary.querySelector('button')!.click());
     expect(summary.textContent).toContain('Fine hi-hats');
 
@@ -1441,7 +1609,9 @@ describe('ConversationView chat streaming', () => {
       'gm_electric_bass_finger',
     );
     const wrapper = container.querySelector<HTMLElement>('[data-markdown-text]')?.parentElement;
-    expect(wrapper?.className).toContain('text-text-reasoning');
+    expect(wrapper?.classList.contains('text-text-secondary')).toBe(true);
+    expect(wrapper?.classList.contains('border-l')).toBe(true);
+    expect(wrapper?.classList.contains('text-sm')).toBe(true);
     expect(wrapper?.className).toContain('font-mono');
 
     // Muted headings stay gray.
@@ -1770,11 +1940,10 @@ describe('ConversationView manual draft segment', () => {
       ];
       render({ draftCode: edited, isLoading: false }, completed);
 
-      // No transient widget to steal the filler and trigger a scroll reveal.
+      // No transient widget can trigger a scroll reveal after the reply lands.
       expect(segment(container)).toBeNull();
-      // The reply keeps the reservation throughout the debounce window.
       const rows = container.querySelectorAll<HTMLElement>('div.flex.justify-start');
-      expect(rows[rows.length - 1].style.minHeight).toBe('calc(100cqh - 132px)');
+      expect(rows[rows.length - 1].style.minHeight).toBe('');
       await act(async () => { await vi.advanceTimersByTimeAsync(200); });
       expect(segment(container)).toBeNull();
 
@@ -1887,11 +2056,7 @@ describe('ConversationView manual draft segment', () => {
     expect(onPlaySegment).toHaveBeenCalledWith(DRAFT_SEGMENT_ID, edited);
   });
 
-  /* The turn filler reserves nearly a viewport below the reading's last block,
-     so the anchor has somewhere to pin the user bubble to. Held by the reply
-     while a segment stands after it, that reservation lands *between* the two
-     and pushes the segment a whole screen down. */
-  it('takes the turn filler off the reply above it, rather than sitting below it', async () => {
+  it('leaves no turn filler under the finished reply or a later draft segment', async () => {
     vi.useFakeTimers();
     setMobileViewport(false);
     const withTurn: ChatMessage[] = [
@@ -1902,8 +2067,6 @@ describe('ConversationView manual draft segment', () => {
       withTurn, vi.fn(), false, revisions, { draftCode: base },
     );
     roots.push(root);
-    // The anchor arms itself when a turn runs in this component's lifetime —
-    // and the filler exists only to give that anchor somewhere to pin to.
     render({ draftCode: base, isLoading: true });
     render({ draftCode: base, isLoading: false });
 
@@ -1912,15 +2075,12 @@ describe('ConversationView manual draft segment', () => {
       .closest<HTMLElement>('div.flex.justify-start')!;
     const draftRow = () => segment(container)!.closest<HTMLElement>('div.flex.justify-start')!;
 
-    // No edit yet: the reply is last, so the reply holds the reservation.
-    expect(replyRow().style.minHeight).not.toBe('');
+    expect(replyRow().style.minHeight).toBe('');
 
     render({ draftCode: edited, isLoading: false });
     await act(async () => { await vi.advanceTimersByTimeAsync(200); });
-    // The edit is last now. The reservation moved with it, and exactly one
-    // block holds it — two would stack a second screen between them.
     expect(replyRow().style.minHeight).toBe('');
-    expect(draftRow().style.minHeight).not.toBe('');
+    expect(draftRow().style.minHeight).toBe('');
     vi.useRealTimers();
   });
 
@@ -2181,21 +2341,22 @@ describe('ConversationView humming attachments', () => {
   it('renders pending humming in the user turn and the tool status and results on the assistant side', async () => {
     setMobileViewport(false);
     hummingMocks.getHummingAsset.mockResolvedValue(null);
-    const onCancelHumming = vi.fn();
     const { container, root, render } = renderConversationView([], vi.fn(), false, undefined, {
       pendingHumming: {
         id: 'pending', text: 'Arrange this', timestamp: 1, takeNumber: 1,
         takes: [{ id: 'take', audioUrl: 'blob:take', durationSeconds: 2 }],
       },
       hummingWaveformToolCalled: true,
-      onCancelHumming,
     });
     roots.push(root);
     const pending = container.querySelector('[data-rollback-bubble="pending"]')!;
     expect(pending.querySelector('.bg-message-user')?.textContent).toBe('Arrange this');
     expect(pending.querySelector('audio')?.getAttribute('src')).toBe('blob:take');
     expect(pending.textContent).not.toContain('analyzeHummingWaveform');
-    expect(container.querySelector('[data-assistant-humming-progress]')?.textContent).toContain('analyzeHummingWaveform');
+    const progress = container.querySelector('[data-assistant-humming-progress]');
+    expect(progress?.textContent).toContain(t('hummingReadingWaveform'));
+    expect(progress?.textContent).not.toContain('analyzeHummingWaveform');
+    expect(progress?.querySelector('button')).toBeNull();
 
     render({}, [
       { id: 'sent', role: 'user', content: 'Arrange this', timestamp: 1, humming: hummingAttachment() },

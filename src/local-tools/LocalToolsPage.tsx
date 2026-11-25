@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { AGENT_WORKFLOW_PATH, isLoopbackHost } from '../lib/routes';
+import { AGENT_WORKFLOW_PATH, CONVERSATION_PREVIEW_PATH, isLoopbackHost } from '../lib/routes';
 import './local-tools.css';
 
 type PromptVersions = { versions: string[]; active: string | null };
@@ -23,6 +23,10 @@ const tools = [
     title: '双 Agent 工作流',
     description: '发送真实测试消息，对照对话、路由决策和音乐执行记录。',
     href: AGENT_WORKFLOW_PATH,
+  }, {
+    title: 'Agent 回复样式',
+    description: '用模拟对话预览回复、行动过程和代码变更，按模块定位样式。',
+    href: CONVERSATION_PREVIEW_PATH,
   }] : []),
 ];
 

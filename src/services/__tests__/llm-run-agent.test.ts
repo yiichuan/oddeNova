@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RunAgentOptions } from '../../agent/loop';
 import type { ConversationTurn } from '../llm';
+import { hummingAttachment } from '../../lib/__tests__/fixtures/humming';
+import { HUMMING_AGENT_PREPROCESSING_VERSION, type HummingAttachment } from '../../types/humming';
 
 const runAgentLoopMock = vi.hoisted(() => vi.fn());
 const getActivePersonaSyncMock = vi.hoisted(() => vi.fn((): { id: string; name: string; prompt?: string } => ({
@@ -706,6 +708,16 @@ describe('createOpenAILLMCaller provider-shaped requests', () => {
 });
 
 describe('Router and Session integration', () => {
+  const humming: HummingAttachment = {
+    ...hummingAttachment(),
+    trimStartSeconds: 0.25,
+    transcription: {
+      engine: 'audio-llm', modelVersion: 'test-transcriber', preprocessingVersion: HUMMING_AGENT_PREPROCESSING_VERSION,
+      modelRhythm: { bpm: 100, timeSignature: '4/4' },
+      notes: [{ pitchMidi: 61, startSeconds: 0, durationSeconds: 0.5 }], warnings: [],
+    },
+  };
+
   function editTask(needsSynthesis = false) {
     return { instruction: 'Lower the kick gain only.', scope: 'parameter', targets: ['layer-1'], parameter: 'gain', needsSynthesis };
   }
@@ -755,6 +767,22 @@ describe('Router and Session integration', () => {
     expect(runAgentLoopMock).not.toHaveBeenCalled();
   });
 
+  it('gives routing and read-only replies the already transcribed humming notes', async () => {
+    anthropicStreamMock.mockReturnValueOnce(respond('The note is C sharp.'))
+      .mockReturnValueOnce(respond('You hummed C♯4.'));
+    await expect(runConversationTurn(request('What pitch did I hum?', { humming }))).resolves.toMatchObject({
+      kind: 'reply', text: 'You hummed C♯4.',
+    });
+    for (const [payload] of anthropicStreamMock.mock.calls) {
+      const messages = JSON.stringify(payload.messages);
+      expect(messages).toContain('C#4');
+      expect(messages).toContain('start_seconds');
+      expect(messages).toContain('0.25');
+      expect(messages).not.toContain('analyzeHummingWaveform');
+    }
+    expect(runAgentLoopMock).not.toHaveBeenCalled();
+  });
+
   it('loads the full built-in persona only for the user-facing reply to a greeting', async () => {
     getActivePersonaSyncMock.mockReturnValueOnce({ id: 'oddenova', name: 'oddeNova' });
     vi.mocked(isZh).mockReturnValueOnce(true);
@@ -791,9 +819,11 @@ describe('Router and Session integration', () => {
       kind: 'reply', text: 'Hello there.',
     });
     expect(draft.on).not.toHaveBeenCalledWith('text', expect.any(Function));
+    expect(onProgress.mock.calls[0][0]).toEqual({ kind: 'router_stage', stage: 'routing' });
     expect(onProgress.mock.calls.map(([event]) => event).filter(event => event.kind.startsWith('router_reply_'))).toEqual([
       { kind: 'router_reply_delta', delta: 'Hello' },
       { kind: 'router_reply_delta', delta: ' there.' },
+      { kind: 'router_reply_complete', text: 'Hello there.' },
     ]);
   });
 
@@ -847,15 +877,23 @@ describe('Router and Session integration', () => {
     anthropicStreamMock
       .mockReturnValueOnce(respond('Working on it', 'executeSession', editTask(true)))
       .mockReturnValueOnce(respond('The kick sits farther back now.'));
-    const input = request('Lower the kick and explain the effect.');
+    const input = request('Lower the kick and explain the effect.', { humming });
     const result = await runConversationTurn(input);
     expect(anthropicStreamMock).toHaveBeenCalledOnce();
     if (result.kind !== 'execute') throw new Error('Expected execution');
+    expect(runAgentLoopMock).toHaveBeenCalledWith(expect.objectContaining({
+      humming, instruction: expect.stringContaining('analyzeHummingWaveform'),
+    }));
+    const brief = JSON.parse(runAgentLoopMock.mock.calls[0][0].instruction);
+    expect(brief.hummingInstruction).toContain('Quantize the hummed notes and meaningful rests');
+    expect(brief.hummingInstruction).toContain('as counts of grid slots, and omit @1');
     await expect(result.synthesize?.({
       ref: input.ref, revisionId: 'rev-new', status: 'saved', playback: 'failed',
     })).resolves.toBe('The kick sits farther back now.');
     expect(anthropicStreamMock.mock.calls[1][0].tools).toBeUndefined();
     expect(JSON.stringify(anthropicStreamMock.mock.calls[1][0].messages)).toContain('rev-new');
+    expect(JSON.stringify(anthropicStreamMock.mock.calls[1][0].messages)).toContain('C#4');
+    expect(JSON.stringify(anthropicStreamMock.mock.calls[1][0].messages)).not.toContain('analyzeHummingWaveform');
   });
 
   it('reports a scope conflict for an out-of-scope candidate even when Session claims it committed', async () => {
@@ -866,6 +904,58 @@ describe('Router and Session integration', () => {
     const result = await runConversationTurn(request('Lower the kick only.'));
     expect(result).toMatchObject({ kind: 'execute', status: 'scope_conflict' });
     expect(JSON.stringify(result)).not.toContain('Private working notes');
+  });
+
+  it('displays a search stage only while the sample search tool is running', async () => {
+    anthropicStreamMock.mockReturnValueOnce(respond('', 'executeSession', editTask()))
+      .mockReturnValue(respond('[]'));
+    runAgentLoopMock.mockImplementationOnce(async ({ onProgress }: RunAgentOptions) => {
+      onProgress?.({ kind: 'tool_call', name: 'searchSamples', args: { queries: [] } });
+      onProgress?.({ kind: 'tool_result', name: 'searchSamples', ok: true });
+      return {
+        code: 's("bd").gain(0.4)', explanation: 'Lowered the kick', iterations: 1, committed: true,
+      };
+    });
+    const onProgress = vi.fn();
+    await runConversationTurn(request('Find a softer kick.', { onProgress }));
+    expect(onProgress.mock.calls.flat().filter(event => event.kind === 'router_stage').map(event => event.stage))
+      .toEqual(['routing', 'composition', 'search', 'analysis']);
+  });
+
+  it('uses the Session plan as the only opening arrangement plan', async () => {
+    anthropicStreamMock.mockReturnValueOnce(respond('', 'executeSession', {
+      instruction: 'Compose a piece.', scope: 'create', needsSynthesis: false,
+    })).mockReturnValueOnce(respond('[{"index":0,"title":"I’ll shape the arrangement in three sections.","detail":""}]'));
+    runAgentLoopMock.mockImplementationOnce(async ({ onProgress }: RunAgentOptions) => {
+      onProgress?.({ kind: 'session_progress', entry: { kind: 'plan', facts: { nextStep: 'shape three sections' } } });
+      return { code: 's("bd")', explanation: '', iterations: 1, committed: true };
+    });
+    await runConversationTurn(request('Compose a piece.', { current: { code: '' }, onProgress: vi.fn() }));
+    const narration = JSON.stringify(anthropicStreamMock.mock.calls[1][0].messages);
+    expect(narration).toContain('shape three sections');
+    expect(narration).not.toContain('sketch the structure of the composition');
+  });
+
+  it('streams a repair status while omitting repair narration', async () => {
+    anthropicStreamMock.mockReturnValueOnce(respond('', 'executeSession', editTask()))
+      .mockReturnValue(respond('[]'));
+    runAgentLoopMock.mockImplementationOnce(async ({ onProgress }: RunAgentOptions) => {
+      onProgress?.({ kind: 'tool_call', name: 'validate', args: {} });
+      onProgress?.({ kind: 'tool_result', name: 'validate', ok: false });
+      onProgress?.({ kind: 'session_progress', entry: { kind: 'plan', facts: { nextStep: 'fix private syntax details' } } });
+      onProgress?.({ kind: 'tool_call', name: 'setCode', args: {} });
+      onProgress?.({ kind: 'session_progress', entry: { kind: 'tool', facts: { action: 'setCode', phase: 'finished' } } });
+      onProgress?.({ kind: 'tool_call', name: 'validate', args: {} });
+      onProgress?.({ kind: 'tool_result', name: 'validate', ok: true });
+      return { code: 's("bd").gain(0.4)', explanation: '', iterations: 2, committed: true };
+    });
+    const onProgress = vi.fn();
+    await runConversationTurn(request('Lower the kick.', { onProgress }));
+    const stages = onProgress.mock.calls.flat().filter(event => event.kind === 'router_stage').map(event => event.stage);
+    expect(stages).toEqual(['routing', 'composition', 'validation', 'repair', 'validation']);
+    const narration = JSON.stringify(anthropicStreamMock.mock.calls[1][0].messages);
+    expect(narration).toContain('setCode');
+    expect(narration).not.toContain('fix private syntax details');
   });
 
   it('never delegates on an invalid tool call and recovers on the single retry', async () => {

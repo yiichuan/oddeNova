@@ -88,6 +88,7 @@ export type ProgressEvent =
   | { kind: 'router_progress'; entry: RouterProgress }
   | { kind: 'router_stage'; stage: RouterStage }
   | { kind: 'router_reply_delta'; delta: string; attemptId?: never }
+  | { kind: 'router_reply_complete'; text: string }
   | { kind: 'router_reply_reset' }
   | { kind: 'session_progress'; entry: SessionProgress }
   | { kind: 'router_request'; durationMs: number; usage?: LLMUsage }

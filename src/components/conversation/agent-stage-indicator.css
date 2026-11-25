@@ -1,0 +1,139 @@
+.agent-stage-indicator {
+  position: relative;
+}
+
+.agent-stage-indicator > svg {
+  position: relative;
+  transform-origin: center;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="search"] > svg {
+  width: 13px;
+  height: 13px;
+  animation: agent-stage-search-orbit 1.8s linear infinite;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="humming"] > svg {
+  animation: agent-stage-listen 1.75s ease-in-out infinite;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="humming"]::after {
+  position: absolute;
+  top: 5px;
+  left: 1px;
+  height: 7px;
+  width: 4px;
+  border-left: 1px solid currentColor;
+  border-radius: 50%;
+  content: "";
+  opacity: .5;
+  animation: agent-stage-sound-wave 1.75s ease-out infinite;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="image"] > svg {
+  animation: agent-stage-blink 2.6s ease-in-out infinite;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="image"] circle {
+  animation: agent-stage-look 2.6s ease-in-out infinite;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="writing"] {
+  --writing-cycle: 2s;
+  isolation: isolate;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="writing"] > svg {
+  z-index: 1;
+  width: 13px;
+  height: 13px;
+  fill: var(--color-conversation-surface);
+  animation: agent-stage-write var(--writing-cycle) linear infinite;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="writing"]::before,
+.agent-stage-indicator[data-agent-stage-animation="writing"]::after {
+  position: absolute;
+  left: 3.5px;
+  width: 9px;
+  border-bottom: 1px solid currentColor;
+  content: "";
+  opacity: .65;
+  transform-origin: left center;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="writing"]::before {
+  bottom: 6px;
+  animation: agent-stage-first-line var(--writing-cycle) linear infinite;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="writing"]::after {
+  bottom: 2px;
+  animation: agent-stage-second-line var(--writing-cycle) linear infinite;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="playback"] > svg {
+  animation: agent-stage-spin 1.5s linear infinite;
+}
+
+/* Counter-rotation and reciprocal scaling keep the icon upright and undistorted. */
+@keyframes agent-stage-search-orbit {
+  from { transform: scaleY(.625) rotate(0deg) translateX(2px) rotate(0deg) scaleY(1.6); }
+  to { transform: scaleY(.625) rotate(360deg) translateX(2px) rotate(-360deg) scaleY(1.6); }
+}
+
+@keyframes agent-stage-listen {
+  0%, 100% { transform: rotate(0deg); }
+  28%, 55% { transform: translateX(1px) rotate(13deg); }
+}
+
+@keyframes agent-stage-sound-wave {
+  0%, 74%, 100% { opacity: 0; transform: translateX(0); }
+  25% { opacity: .8; }
+  65% { opacity: 0; transform: translateX(-2px); }
+}
+
+@keyframes agent-stage-blink {
+  0%, 77%, 87%, 100% { transform: scaleY(1); }
+  82% { transform: scaleY(.12); }
+}
+
+@keyframes agent-stage-look {
+  0%, 100% { transform: translateX(0); }
+  26%, 45% { transform: translateX(-2px); }
+  62%, 76% { transform: translateX(2px); }
+}
+
+@keyframes agent-stage-write {
+  0%, 100% { transform: translate(-1px, -2px); }
+  32% { transform: translate(8px, -2px); }
+  40% { transform: translate(3px, -5px); }
+  48% { transform: translate(-1px, 2px); }
+  80% { transform: translate(8px, 2px); }
+  90% { transform: translate(3px, -5px); }
+}
+
+@keyframes agent-stage-first-line {
+  0% { transform: scaleX(0); }
+  32%, 80% { opacity: .65; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+@keyframes agent-stage-second-line {
+  0%, 48% { transform: scaleX(0); }
+  80% { opacity: .65; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+@keyframes agent-stage-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-stage-indicator[data-agent-stage-animation] > svg,
+  .agent-stage-indicator[data-agent-stage-animation] circle,
+  .agent-stage-indicator[data-agent-stage-animation="writing"]::before,
+  .agent-stage-indicator[data-agent-stage-animation]::after {
+    animation: none;
+  }
+}

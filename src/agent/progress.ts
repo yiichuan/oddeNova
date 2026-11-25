@@ -4,6 +4,8 @@ export interface RouterProgress {
   kind: RouterProgressKind;
   title: string;
   detail?: string;
+  summary?: string;
+  application?: string;
   durationMs?: number;
   toolAction?: string;
 }
@@ -14,10 +16,15 @@ export interface SessionProgress {
   durationMs?: number;
 }
 
-export type RouterStage = 'image' | 'humming' | 'analysis' | 'composition' | 'structure' | 'validation' | 'reply';
+export type RouterStage = 'routing' | 'image' | 'humming' | 'search' | 'analysis'
+  | 'composition' | 'structure' | 'validation' | 'repair' | 'playback' | 'reply';
 
 export interface LiveRouterProgress {
   stage?: RouterStage;
   operation?: string;
   reply?: string;
+  replyComplete?: boolean;
 }
+
+export const ROUTER_STREAM_BATCH_MS = 400;
+export const ROUTER_STREAM_LINE_REVEAL_MS = 480;

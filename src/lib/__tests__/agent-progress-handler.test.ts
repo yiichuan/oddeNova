@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAgentProgressHandler } from '../agent-progress-handler';
 import { t, zh } from '../i18n';
+import type { LiveRouterProgress } from '../../agent/progress';
 
 function makeSessions() {
   return {
@@ -37,6 +38,24 @@ describe('createAgentProgressHandler', () => {
       ['tool_call', t('searchingSamples'), options],
       ['tool_call', t('runningTool'), { toolName: 'unknownTool', sessionId: 'S1' }],
     ]);
+  });
+
+  it('keeps the current stage visible when a previous edit is narrated late', () => {
+    let live: LiveRouterProgress = {};
+    const sessions = {
+      ...makeSessions(),
+      updateLiveRouterProgress: (_sessionId: string, update?: (current: LiveRouterProgress) => LiveRouterProgress) => {
+        live = update?.(live) ?? {};
+      },
+    };
+    const handle = createAgentProgressHandler(sessions, 'S1');
+
+    handle({ kind: 'router_stage', stage: 'validation' });
+    const entry = { kind: 'operation' as const, title: 'Writing the drums', detail: 'Added a kick on the downbeat.' };
+    handle({ kind: 'router_progress', entry });
+
+    expect(live).toEqual({ stage: 'validation', operation: undefined });
+    expect(sessions.addProgress).toHaveBeenCalledWith('router_progress', entry.title, { sessionId: 'S1', routerProgress: entry });
   });
 
   it('routes streamed chat replies directly into the assistant message', () => {

@@ -2,6 +2,11 @@
 export const LEARN_PATH_PREFIX = '/learn';
 export const LOCAL_TOOLS_PATH = '/local-tools';
 export const AGENT_WORKFLOW_PATH = LOCAL_TOOLS_PATH + '/agent-workflow';
+export const CONVERSATION_PREVIEW_PATH = LOCAL_TOOLS_PATH + '/conversation-preview';
+
+export function isConversationPreviewPath(pathname: string = window.location.pathname): boolean {
+  return pathname === CONVERSATION_PREVIEW_PATH || pathname === CONVERSATION_PREVIEW_PATH + '/';
+}
 
 /** True for the tutorial entry's own path space. Reads the current page by default. */
 export function isLearnPath(pathname: string = window.location.pathname): boolean {

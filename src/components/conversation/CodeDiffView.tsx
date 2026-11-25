@@ -175,7 +175,7 @@ export function CodeDiffView({
             <span className="text-diff-add">+{diff.additions}</span>
             <span className="text-diff-remove">−{diff.deletions}</span>
             {variant === 'turn' && revision.playbackStatus === 'failed' && (
-              <span className="ml-1 truncate text-amber-300/70">{t('revisionPlaybackFailed')}</span>
+              <span data-code-diff-playback-failed className="ml-1 truncate text-amber-300/70">{t('revisionPlaybackFailed')}</span>
             )}
           </button>
           <button
@@ -221,7 +221,7 @@ export function CodeDiffView({
       {expanded && (
         <div className={`border-t border-border bg-auth-field py-1 animate-fade-in${guided ? ' overflow-hidden rounded-b-md' : ''}`}>
           {diff.groups.length === 0 && (
-            <div className="px-3 py-3 text-[11px] text-text-muted">{t('noCodeChanges')}</div>
+            <div data-code-diff-empty className="px-3 py-3 text-[11px] text-text-muted">{t('noCodeChanges')}</div>
           )}
           {diff.groups.map((group) => (
             <section key={group.key} data-diff-group={group.name} className="py-1.5 first:pt-0 last:pb-0">

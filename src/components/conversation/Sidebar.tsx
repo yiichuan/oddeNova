@@ -26,7 +26,6 @@ interface SidebarProps {
   sessions: readonly (Session | SessionSummary)[];
   currentId: string | null;
   inputMode?: InputMode;
-  choiceOptions?: string[];
   suggestions: string[];
   onSendText: (
     text: string,
@@ -98,7 +97,6 @@ export default function Sidebar({
   sessions,
   currentId,
   inputMode = 'normal',
-  choiceOptions,
   suggestions,
   onSendText,
   humming,
@@ -271,11 +269,11 @@ export default function Sidebar({
             liveRouterProgress={liveRouterProgress}
             pendingHumming={humming?.pendingSubmission}
             hummingWaveformToolCalled={humming?.waveformToolCalled}
-            onCancelHumming={humming?.cancelTranscription}
             revisions={revisions}
             isLoading={isLoading && !isReplaying}
             isVideoMode={isVideoMode}
             scrollBottom={scrollBottom}
+            onSelectChoice={inputMode === 'choice' && !humming?.isTranscribing ? text => onSendText(text, 'choice') : undefined}
             onRollback={onRollback}
             onBranch={onBranch}
             onRetry={onRetry}
@@ -295,7 +293,7 @@ export default function Sidebar({
       </div>
 
       <div data-sidebar-composer className="-mt-px w-full shrink-0">
-        <ChatInput recordingScope={`${ownerKey ?? ""}:${currentId ?? ""}`} key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} humming={humming} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} choiceOptions={choiceOptions} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} guided={guided} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
+        <ChatInput recordingScope={`${ownerKey ?? ""}:${currentId ?? ""}`} key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} humming={humming} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} guided={guided} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
       </div>
     </aside>
   );

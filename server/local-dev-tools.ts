@@ -15,6 +15,7 @@ function logError(message: string, error: unknown) {
 const toolPaths = new Set([
   '/local-tools', '/local-tools/',
   '/local-tools/prompt-compare', '/local-tools/prompt-compare/',
+  '/local-tools/conversation-preview', '/local-tools/conversation-preview/',
   '/sample-library', '/sample-library/',
 ]);
 

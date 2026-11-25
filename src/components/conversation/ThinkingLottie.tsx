@@ -43,7 +43,7 @@ interface ThinkingLottieProps {
 export function ThinkingLottie({ className }: ThinkingLottieProps) {
   // Each mount hands lottie its own deep clone: lottie-web mutates the
   // animationData object in place while parsing, so re-using the shared
-  // cached object on a later mount (every turn remounts this component)
+// cached object on a later mount (each thinking phase can mount this component)
   // can leave the animation frozen on frame 0 — which for this flash asset
   // is blank, i.e. no visible indicator at all. The network fetch stays
   // cached; only the object identity is per-mount.

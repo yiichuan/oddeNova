@@ -193,6 +193,7 @@ async function applyRoutedExecution(
   signal: AbortSignal,
   context: AnalyticsContext,
   onSaved: () => void,
+  onPreparingPlayback: () => void,
   onPlayed: () => void,
   trace?: AgentTraceSink,
 ): Promise<{ outcome: AgentTurnOutcome; terminationReason?: string }> {
@@ -251,6 +252,7 @@ async function applyRoutedExecution(
   if (ownsTurn() && deps.isCurrentSession(ref.sessionId)
     && router.getLiveEditorCode() === baseline.editorCode) {
     if (!signal.aborted) {
+      onPreparingPlayback();
       trace?.({ from: 'client', label: '尝试播放修订', data: { revisionId } });
       const played = await deps.play(result.code, context, signal).catch(error => {
         trace?.({ from: 'client', label: '播放异常', failed: true, data: traceError(error) });
@@ -408,7 +410,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
         }[event.kind], data: event });
       }
       if (!router || event.kind === 'router_progress' || event.kind === 'router_stage'
-        || event.kind === 'router_reply_delta' || event.kind === 'router_reply_reset') onProgress(event);
+        || event.kind === 'router_reply_delta' || event.kind === 'router_reply_complete' || event.kind === 'router_reply_reset') onProgress(event);
     };
     const routed = router && ref ? await router.run({
       ref,
@@ -437,7 +439,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       return;
     }
     const legacyArgs = [
-      formatHummingContext(input.text, humming, Boolean(waveformAttachment)),
+      formatHummingContext(input.text, humming, waveformAttachment ? 'tool' : 'history'),
       beforeCode,
       reportProgress,
       input.moodContext,
@@ -474,6 +476,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
         editorCode: editorCode ?? beforeCode,
       }, ownsTurn, signal, context,
       () => { routerMetrics.first_answer_ms = Date.now() - startedAt; },
+      () => reportProgress({ kind: 'router_stage', stage: 'playback' }),
       () => { routerMetrics.time_to_play_ms = Date.now() - startedAt; }, trace);
       outcome = completion.outcome;
       terminationReason = completion.terminationReason ?? terminationReason;

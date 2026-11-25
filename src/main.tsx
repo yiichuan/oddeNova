@@ -1,5 +1,5 @@
 import './index.css'
-import { isAgentWorkflowPath, isLoopbackHost, isLearnPath, isLocalToolsPath, isPromptComparePath, isSampleLibraryPath } from './lib/routes';
+import { isAgentWorkflowPath, isConversationPreviewPath, isLoopbackHost, isLearnPath, isLocalToolsPath, isPromptComparePath, isSampleLibraryPath } from './lib/routes';
 import { loadEditorPreferences } from './lib/editor-preferences';
 import { loadAppearancePreferences } from './lib/appearance-preferences';
 import { initPersonaCache } from './lib/persona-storage';
@@ -18,12 +18,19 @@ loadAppearancePreferences()
 loadEditorPreferences()
 consumeOddeNovaBridgeBootstrapHash()
 const localAgentWorkflow = import.meta.env.DEV && isAgentWorkflowPath() && isLoopbackHost(window.location.hostname);
-if (!localAgentWorkflow) {
+const localConversationPreview = import.meta.env.DEV && isConversationPreviewPath() && isLoopbackHost(window.location.hostname);
+if (!localAgentWorkflow && !localConversationPreview) {
   initializeAnalytics(zh ? 'zh-CN' : 'en');
   installAppErrorTelemetry();
 }
 
-if (localAgentWorkflow) {
+if (localConversationPreview) {
+  const root = mountEntryRoot();
+  root.render(entryLoadingView());
+  void import('./local-tools/ConversationPreviewPage')
+    .then(module => root.render(<module.default />))
+    .catch(error => root.render(entryErrorView(error)));
+} else if (localAgentWorkflow) {
   const root = mountEntryRoot();
   root.render(entryLoadingView());
   void Promise.all([

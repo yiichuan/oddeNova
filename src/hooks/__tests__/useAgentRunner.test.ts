@@ -603,7 +603,9 @@ describe('routed turns', () => {
     expect(deps.runAgent).not.toHaveBeenCalled();
     expect(onProgress.mock.calls).toEqual([
       [{ kind: 'router_progress', entry: { kind: 'plan', title: 'Review the score' } }],
+      [{ kind: 'router_stage', stage: 'playback' }],
     ]);
+    expect(onProgress.mock.invocationCallOrder[1]).toBeLessThan(vi.mocked(deps.play).mock.invocationCallOrder[0]);
     expect(router.commit).toHaveBeenCalledWith(expect.objectContaining({ summary: t('agentRevisionSaved') }), expect.any(Function));
     expect(router.updateReceipt).toHaveBeenCalledWith('S1', 'revision-1', 'played', t('agentRevisionSaved'));
   });

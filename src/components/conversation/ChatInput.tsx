@@ -11,7 +11,6 @@ import HummingAudioPlayer from './HummingAudioPlayer';
 import RecordingDots from './RecordingDots';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
-import { stepwiseOptionText } from '../../services/suggestions';
 import type { ChatEntryPoint, InputMode } from '../../hooks/useChat';
 import type { HummingInputController } from '../../hooks/useHummingInput';
 import type { HummingAttachment } from '../../types/humming';
@@ -54,7 +53,7 @@ function formatRecordingTime(seconds: number): string {
 // card's top padding and the footer row below it) before it switches to an
 // internal scrollbar instead of pushing the layout further down.
 const MAX_TEXTAREA_HEIGHT = 180;
-type PendingSend = 'message' | 'choice' | 'mood';
+type PendingSend = 'message' | 'mood';
 
 /**
  * Grow the field to fit its text, up to the cap.
@@ -101,8 +100,6 @@ interface ChatInputProps {
   onFocusChange?: (focused: boolean) => void;
   /** Normal suggestion carousel, or a stepwise numbered-choice response. */
   inputMode?: InputMode;
-  /** Numbered options from the latest unanswered stepwise-composition reply. */
-  choiceOptions?: string[];
   /** Guidance suggestions, rotated as placeholder text; Tab adopts the current one. */
   suggestions?: string[];
   /**
@@ -156,7 +153,6 @@ export default function ChatInput({
   isVideoMode = false,
   onFocusChange,
   inputMode = 'normal',
-  choiceOptions,
   suggestions,
   onMoodGenerate,
   presetLock,
@@ -167,10 +163,8 @@ export default function ChatInput({
   recordingScope,
 }: ChatInputProps) {
   const [text, setText] = useState('');
-  const [choiceSendError, setChoiceSendError] = useState<{ optionsKey: string; message: string } | null>(null);
   const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
   const sendInProgressRef = useRef(false);
-  const choiceOptionsKey = JSON.stringify(choiceOptions ?? []);
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [pendingImages, setPendingImages] = useState<{ id: string; url: string }[]>([]);
   const [localPreviews, setLocalPreviews] = useState<Record<string, string>>({});
@@ -328,13 +322,6 @@ export default function ChatInput({
   // fetch inside onMoodGenerate resolves) — otherwise a fast double-Enter
   // could fire the fetch twice.
   const moodPending = pendingSend === 'mood';
-  const showStepwiseChoices = Boolean(choiceOptions?.length)
-    && !isLoading
-    && replayValue === undefined
-    && !isVideoMode
-    && !presetLock
-    && !guided;
-
   // Placeholder carousel with a typewriter reveal: each suggestion types out
   // (CJK character by character, latin word by word), dwells, then the next
   // one starts. Tab adopts the full current suggestion. Typing by the user
@@ -348,7 +335,7 @@ export default function ChatInput({
   const [suggestionFading, setSuggestionFading] = useState(false);
   const [keyHintFor, setKeyHintFor] = useState<{ index: number; text: string } | null>(null);
   const [tabInteraction, setTabInteraction] = useState<(NonNullable<typeof keyHintFor> & { hovering: boolean }) | null>(null);
-  const suggestionList = showStepwiseChoices || inputMode === 'choice' || presetLock || guided
+  const suggestionList = inputMode === 'choice' || presetLock || guided
     ? []
     : moodSuggestionActive
       ? [...(suggestions ?? []), moodSuggestion]
@@ -684,58 +671,14 @@ export default function ChatInput({
     attachment_too_large: 'hummingFailed',
     transcription_failed: 'hummingFailed',
   };
-  const choiceOptionDisabled = inputDisabled || pendingSend !== null;
   // The waiting fade, applied per part (see the card below): everything that
   // is genuinely out of reach while the agent answers, and nothing else.
   const waitingDim = `transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`;
-
-  const sendChoice = async (option: string) => {
-    if (
-      !showStepwiseChoices
-      || !choiceOptions?.includes(option)
-      || choiceOptionDisabled
-    ) return;
-    if (!beginSend('choice')) return;
-    setChoiceSendError(null);
-    try {
-      await onSendText(stepwiseOptionText(option), 'choice');
-    } catch (error) {
-      setChoiceSendError({
-        optionsKey: choiceOptionsKey,
-        message: error instanceof Error ? error.message : t('requestFailed'),
-      });
-    } finally {
-      finishSend();
-    }
-  };
 
   return (
     <form onSubmit={handleSubmit} onPaste={e => { const files = Array.from(e.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { e.preventDefault(); void addImages(files); } }} onDragEnter={e => { if (!e.dataTransfer.types.includes('Files')) return; fileDragDepth.current += 1; setFileDragActive(true); }} onDragLeave={e => { if (!e.dataTransfer.types.includes('Files')) return; fileDragDepth.current = Math.max(0, fileDragDepth.current - 1); if (!fileDragDepth.current) setFileDragActive(false); }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDrop={e => { endFileDrag(); if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)); } }} onClick={handleCardClick} data-onboarding-target="composer" className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
 
 
-      {showStepwiseChoices && (
-        <div
-          role="group"
-          aria-label={t('choiceOptionsLabel')}
-          data-chat-choice-options
-          className="grid min-w-0 justify-items-start gap-1.5 px-4 pt-2 pb-3"
-        >
-          {choiceOptions?.map((option, index) => (
-            <button
-              key={`${index}:${option}`}
-              type="button"
-              disabled={choiceOptionDisabled}
-              onClick={() => { void sendChoice(option); }}
-              className={`min-h-9 max-w-full rounded-[13px] border border-border bg-transparent px-3 py-1.5 text-left ${isMobile ? 'text-base' : 'text-[13px]'} leading-snug text-text-primary [overflow-wrap:anywhere] transition-colors enabled:cursor-pointer enabled:hover:border-text-muted enabled:hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11`}
-            >
-              {stepwiseOptionText(option)}
-            </button>
-          ))}
-          {choiceSendError?.optionsKey === choiceOptionsKey && (
-            <p role="alert" className="px-1 py-1 text-xs leading-relaxed text-error">{choiceSendError.message}</p>
-          )}
-        </div>
-      )}
       {/* Card: textarea on top, footer (hint + send button) below it in normal
           flow — a real layout row, not an overlay, so it always reserves its
           own space regardless of how tall/scrolled the textarea gets. */}
@@ -909,7 +852,7 @@ export default function ChatInput({
               }}
               placeholder={suggestionActive || guided
                 ? ''
-                : t(showStepwiseChoices || inputMode === 'choice' ? 'choiceInputPlaceholder' : 'inputPlaceholder')}
+                : t(inputMode === 'choice' ? 'choiceInputPlaceholder' : 'inputPlaceholder')}
               rows={1}
               disabled={inputDisabled}
               // The composer's resting height, and so the whole card's: the

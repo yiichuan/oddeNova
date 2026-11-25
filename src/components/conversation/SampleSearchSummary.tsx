@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { SampleSearchSummaryItem } from '../../hooks/useChat';
 import { zh } from '../../lib/i18n';
+import { MusicText } from './music-text';
 
 export function SampleSearchSummary({ items }: { items: SampleSearchSummaryItem[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -15,8 +16,8 @@ export function SampleSearchSummary({ items }: { items: SampleSearchSummaryItem[
             {labels.length > 0 && (
               <div className="mt-1 flex flex-wrap gap-1.5">
                 {labels.map((label) => (
-                  <span key={label} className="min-w-0 rounded-md bg-text-primary/5 px-2 py-0.5 text-xs">
-                    {label}
+                  <span key={label} className="min-w-0 rounded-md bg-text-primary/5 px-2 py-0.5 text-xs has-[[data-music-token]]:bg-transparent has-[[data-music-token]]:px-0">
+                    <MusicText text={label} sampleLabel />
                   </span>
                 ))}
               </div>
