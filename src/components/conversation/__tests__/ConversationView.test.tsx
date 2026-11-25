@@ -681,9 +681,7 @@ describe('ConversationView chat streaming', () => {
     expect(container.querySelector('details')).toBeNull();
 
     render({}, [...messages, { id: 'answer', role: 'user', content: '加定音鼓', timestamp: 2 }]);
-    const history = container.querySelector('details');
-    expect(history?.open).toBe(false);
-    expect(history?.querySelectorAll('li')).toHaveLength(2);
+    expect(container.querySelector('details')).toBeNull();
   });
 
   it('keeps footnote targets unique across separate assistant messages', () => {

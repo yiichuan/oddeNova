@@ -322,7 +322,6 @@ const S: Record<string, readonly [string, string]> = {
   choiceInputPlaceholder: ['或输入你的想法', 'Or write your own idea…'],
   chatSendInProgress: ['已有消息正在发送，请稍后再试。', 'A message is already being sent. Please try again shortly.'],
   choiceOptionsLabel: ['选择创作方向并发送', 'Choose and send a creative direction'],
-  previousChoiceOptions: ['查看当时的 {count} 个选项', 'View the {count} options from this turn'],
   tabToFill:           ['按 Tab 填入', 'Tab to use'],
   enterToFill:         ['按 ⏎ 填入', '⏎ to use'],
   notInitialized:      ['未初始化', 'Not initialized'],
