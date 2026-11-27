@@ -67,8 +67,10 @@ function codeSections(code: string): { stableLayers: boolean; score: CodeSection
 }
 
 function lineDiff(before: string, after: string): DiffRow[] {
-  const oldLines = splitLines(before);
-  const newLines = splitLines(after);
+  return diffCodeLines(splitLines(before), splitLines(after));
+}
+
+export function diffCodeLines(oldLines: readonly string[], newLines: readonly string[]): Exclude<DiffRow, { kind: 'skip' }>[] {
   const table = Array.from({ length: oldLines.length + 1 }, () =>
     Array<number>(newLines.length + 1).fill(0),
   );
@@ -81,7 +83,7 @@ function lineDiff(before: string, after: string): DiffRow[] {
     }
   }
 
-  const rows: DiffRow[] = [];
+  const rows: Exclude<DiffRow, { kind: 'skip' }>[] = [];
   let oldIndex = 0;
   let newIndex = 0;
   while (oldIndex < oldLines.length || newIndex < newLines.length) {

@@ -292,7 +292,7 @@ export function getActiveLLMCaller(options?: { disableDeepSeekThinking?: boolean
 // ===========================================================================
 
 const anthropicLLMCaller: LLMCaller = {
-  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium') {
+  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium', onToolArguments) {
     const anthropic = getAnthropicClient();
     const model = getModel();
     const { system, messages: amsgs } = convertChatHistory(messages);
@@ -318,6 +318,19 @@ const anthropicLLMCaller: LLMCaller = {
     }
 
     stream.on('thinking', (delta) => onReasoningDelta?.(delta));
+    if (onToolArguments) {
+      const toolInputs = new Map<number, { name: string; args: string }>();
+      stream.on('streamEvent', event => {
+        if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
+          toolInputs.set(event.index, { name: event.content_block.name, args: '' });
+        } else if (event.type === 'content_block_delta' && event.delta.type === 'input_json_delta') {
+          const input = toolInputs.get(event.index);
+          if (!input) return;
+          input.args += event.delta.partial_json;
+          onToolArguments(input.name, input.args);
+        }
+      });
+    }
 
     const response = await stream.finalMessage();
 
@@ -359,7 +372,7 @@ const anthropicLLMCaller: LLMCaller = {
 
 function createOpenAILLMCaller({ disableDeepSeekThinking = false } = {}): LLMCaller {
   return {
-    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium') {
+    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium', onToolArguments) {
       const oai = getOpenAIClient();
       const cfg = getActiveModelConfig();
       // OpenAI's GPT-5 reasoning models and Kimi's thinking models fix
@@ -434,6 +447,7 @@ function createOpenAILLMCaller({ disableDeepSeekThinking = false } = {}): LLMCal
             if (tc.id) buf.id = tc.id;
             if (tc.function?.name) buf.name = tc.function.name;
             if (tc.function?.arguments) buf.args += tc.function.arguments;
+          if (buf.args && (tc.function?.arguments || tc.function?.name)) onToolArguments?.(buf.name, buf.args);
           }
         }
       }
@@ -551,6 +565,7 @@ export async function runAgent(
 
 interface MusicRequest {
   validateScope?: RunAgentOptions['validateScope'];
+  editScope?: EditScope;
   demoInstruction?: string;
   trace?: AgentTraceSink;
   instruction: string;
@@ -567,7 +582,7 @@ interface MusicRequest {
 
 async function executeMusic({
   instruction, currentCode, preparedUserContent, preparedHistory, enableThinking,
-  onProgress, moodContext, signal, conversationHistory, humming, trace, validateScope, demoInstruction,
+  onProgress, moodContext, signal, conversationHistory, humming, trace, validateScope, editScope, demoInstruction,
 }: MusicRequest): Promise<RunAgentResult> {
   signal?.throwIfAborted();
   const locale = isZh() ? 'zh' : 'en';
@@ -619,6 +634,7 @@ async function executeMusic({
     locale,
     systemPrompt: validateScope ? musicPrompt + '\n' + SESSION_EXECUTION_PROMPT : musicPrompt,
     validateScope,
+    editScope,
     llm: model ? traceModel(llm, trace, 'session', '音乐模型', model) : llm,
     trace,
     onProgress,
@@ -784,7 +800,8 @@ export async function runConversationTurn(request: ConversationRequest): Promise
     const { task } = decision;
     let plannedSampleSearch = false;
     let repairingCode = false;
-    stage(waveform ? 'humming' : 'composition');
+    let arrangingDetails = false;
+    stage(waveform ? 'humming' : 'structure');
 
     const permitsEdit = createScopeValidator(task.scope, current.code);
     let rejectedCandidate = false;
@@ -826,16 +843,19 @@ export async function runConversationTurn(request: ConversationRequest): Promise
       humming: waveform,
       enableThinking: true,
       validateScope,
+      editScope: task.scope,
       onProgress: event => {
         if (event.kind === 'session_progress') {
           // Keep repair status in the indicator and still retain tool titles
           // for the completed turn. Repairs are internal, not musical edits.
           if (repairingCode && event.entry.kind !== 'tool') return;
-          if (event.entry.kind === 'strategy') stage('structure');
+          if (event.entry.kind === 'strategy') arrangingDetails = true;
           progress?.add(event.entry);
           return;
         }
-        if (event.kind === 'iteration' && event.index > 1 && !repairingCode) stage('composition');
+        if (event.kind === 'iteration' && event.index > 1 && !repairingCode) {
+          stage(arrangingDetails ? 'composition' : 'structure');
+        }
         if (event.kind === 'tool_call') {
           switch (event.name) {
             case 'analyzeHummingWaveform': stage('humming'); break;
@@ -850,7 +870,10 @@ export async function runConversationTurn(request: ConversationRequest): Promise
               stage('search');
               break;
             case 'getScore': stage('analysis'); break;
-            case 'setCode': stage(repairingCode ? 'repair' : 'composition'); break;
+            case 'setCode':
+              arrangingDetails = true;
+              stage(repairingCode ? 'repair' : 'composition');
+              break;
             case 'validate':
             case 'commit': stage('validation'); break;
           }
@@ -872,6 +895,7 @@ export async function runConversationTurn(request: ConversationRequest): Promise
       : rejectedCandidate ? 'scope_conflict'
       : changed || ['timeout', 'iteration_limit', 'validation_failed'].includes(result.terminationReason ?? '') ? 'failed'
       : 'no_change';
+    if (status !== 'candidate') onProgress?.({ kind: 'code_draft' });
     trace?.({ from: 'session', to: 'router', label: '返回实施结果与证据',
       data: { status, scope: task.scope, result, implementationNote: explanation } });
     return {

@@ -211,7 +211,96 @@ it('groups completed Router progress under Process and puts code tools under Com
   }
 });
 
-it('glides to each Router batch before revealing it and holds position when the status gets shorter', () => {
+it('shows the new code widget only after the streamed reply and status finish', () => {
+  setMobileViewport(false);
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'requestAnimationFrame', 'cancelAnimationFrame'] });
+  const user: ChatMessage = { id: 'u', role: 'user', content: 'Arrange this', timestamp: 1 };
+  const code = 's("bd")';
+  const history: ChatMessage[] = [
+    { id: 'older-user', role: 'user', content: 'Previous request', timestamp: 0 },
+    { id: 'older-reply', role: 'assistant', content: 'Previous reply', code, timestamp: 0 },
+    user,
+  ];
+  const receipt: ChatMessage = { id: 'saved', role: 'assistant', content: 'Saved.', code, revisionId: 'rev', timestamp: 2 };
+  const revision: CodeRevision = {
+    id: 'rev', beforeCode: '', afterCode: code, playbackStatus: 'played', createdAt: 2,
+  };
+  const { container, root, render } = renderConversationView(history, vi.fn(), true, [revision], {
+    liveRouterProgress: { stage: 'playback' },
+  });
+  const getRect = HTMLElement.prototype.getBoundingClientRect;
+  const widgetRects = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    if (this.matches('[data-code-diff="saved"], [data-code-diff="saved"] > :first-child')) {
+      const scrollTop = this.closest('.conversation-scroll')!.scrollTop;
+      return new DOMRect(0, 640 - scrollTop, 200, 30);
+    }
+    return getRect.call(this);
+  });
+  try {
+    const box = container.querySelector<HTMLDivElement>('.conversation-scroll')!;
+    Object.defineProperties(box, {
+      clientHeight: { value: 500 },
+      scrollHeight: { value: 1500 },
+    });
+    const status = container.querySelector<HTMLElement>('[data-live-reply-heading]')!;
+    const statusContent = status.firstElementChild as HTMLElement;
+    const animateStatus = vi.fn();
+    Object.defineProperty(statusContent, 'animate', { value: animateStatus });
+    let bottom = 300;
+    const statusRect = () => ({ top: bottom - box.scrollTop - 24, bottom: bottom - box.scrollTop });
+    stubRect(status, statusRect);
+    stubRect(statusContent, statusRect);
+    render({ liveRouterProgress: { stage: 'reply' } });
+    act(() => vi.advanceTimersByTime(400));
+
+    bottom = 760;
+    render({ liveRouterProgress: { stage: 'reply' } }, [...history, receipt]);
+    act(() => vi.advanceTimersByTime(400));
+    const widget = () => container.querySelector<HTMLElement>('[data-code-diff="saved"]');
+    expect(widget()).toBeNull();
+    expect(container.querySelector('[data-code-bar="older-reply"]')).not.toBeNull();
+    expect(box.scrollTop).toBe(276);
+    expect(animateStatus).not.toHaveBeenCalled();
+
+    bottom = 720;
+    render({ liveRouterProgress: { stage: 'reply', reply: 'Here is' } }, [...history, receipt]);
+    act(() => vi.advanceTimersByTime(400));
+    expect(container.querySelector('[data-message-id="saved"] [data-markdown-text]')?.textContent).toBe('');
+    expect(animateStatus).not.toHaveBeenCalled();
+
+    bottom = 980;
+    const reply = 'Here is the arrangement.';
+    render({ liveRouterProgress: { stage: 'reply', reply: `${reply}\n\n` } }, [...history, receipt]);
+    act(() => vi.advanceTimersByTime(400));
+    expect(container.querySelector('[data-message-id="saved"]')?.textContent).toContain(reply);
+    expect(widget()).toBeNull();
+    expect(box.scrollTop).toBe(496);
+    expect(animateStatus).not.toHaveBeenCalled();
+
+    render({ liveRouterProgress: { stage: 'reply', reply, replyComplete: true } }, [...history, receipt]);
+    act(() => vi.advanceTimersByTime(400));
+    expect(container.querySelector('[data-live-reply-heading]')).toBe(status);
+    expect(widget()).toBeNull();
+
+    const finalMessages = [...history, { ...receipt, content: reply }];
+    render({ isLoading: false }, finalMessages);
+    expect(container.querySelector('[data-live-reply-heading]')).toBeNull();
+    const completedWidget = widget();
+    expect(completedWidget).not.toBeNull();
+    expect(box.scrollTop).toBe(496);
+    expect(completedWidget!.getBoundingClientRect().bottom).toBeGreaterThan(0);
+    render({ isLoading: false }, [...finalMessages]);
+    expect(widget()).toBe(completedWidget);
+    expect(box.scrollTop).toBe(496);
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    widgetRects.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+it('settles the first reply in place, then glides to later Router batches before revealing them', () => {
   setMobileViewport(false);
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'requestAnimationFrame', 'cancelAnimationFrame'] });
   const createRange = document.createRange.bind(document);
@@ -250,12 +339,8 @@ it('glides to each Router batch before revealing it and holds position when the 
     render({ isLoading: true, liveRouterProgress: { stage: 'reply', reply: 'First line and more\n\n' } });
     expect(box.scrollTop).toBe(0);
     act(() => vi.advanceTimersByTime(400));
-    expect(box.scrollTop).toBe(0);
-    act(() => vi.advanceTimersByTime(112));
-    expect(box.scrollTop).toBeGreaterThan(0);
-    expect(box.scrollTop).toBeLessThan(366);
-    act(() => vi.advanceTimersByTime(128));
     expect(box.scrollTop).toBe(366);
+    expect(animateStatus).not.toHaveBeenCalled();
     const reply = container.querySelector<HTMLElement>('[data-live-router-reply]')!;
     const animate = vi.fn();
     const blurAnimation = { cancel: vi.fn(), onfinish: null as (() => void) | null };
@@ -285,8 +370,14 @@ it('glides to each Router batch before revealing it and holds position when the 
       expect.objectContaining({ offset: 0.5, maskPosition: '0px 0px, 100% 24px' }),
     ]), timing);
     expect(animateBlur).toHaveBeenCalledWith(expect.arrayContaining([
-      expect.objectContaining({ offset: 0.09, maskComposite: 'subtract', maskPosition: expect.stringMatching(/^[^1].*% 0px, 100% 0px$/) }),
-      expect.objectContaining({ offset: 0.41, maskComposite: 'subtract', maskPosition: expect.stringMatching(/^0% 0px, [^0].*% 0px$/) }),
+      expect.objectContaining({
+        offset: 0.09,
+        maskImage: expect.stringContaining('linear-gradient(to bottom, transparent,'),
+        maskComposite: 'intersect, subtract',
+        maskPosition: expect.stringMatching(/^0px 0px, (?!100%).+% 0px, 100% 0px$/),
+      }),
+      expect.objectContaining({ offset: 0.41, maskPosition: expect.stringMatching(/^0px 0px, 0% 0px, [^0].*% 0px$/) }),
+      expect.objectContaining({ offset: 0.5, maskPosition: '0px 24px, 100% 24px, 100% 24px' }),
     ]), timing);
     act(() => vi.advanceTimersByTime(224));
     expect(box.scrollTop).toBe(516);
@@ -954,6 +1045,25 @@ describe('ConversationView chat streaming', () => {
     }
   });
 
+  it('renders an explicit choice invitation as existing option buttons for a saved normal reply', () => {
+    setMobileViewport(true);
+    const reply: ChatMessage = {
+      id: 'old-choice', role: 'assistant', inputMode: 'normal', timestamp: 2,
+      content: '可以从这两处入手：\n\n1. **换成 808**\n2. 只换踩镲\n\n你选一个，我再往下走。',
+    };
+    const onSelectChoice = vi.fn();
+    const { container, root, render } = renderConversationView([reply], vi.fn(), false, undefined, { onSelectChoice });
+    roots.push(root);
+    const options = container.querySelectorAll<HTMLButtonElement>('[data-chat-choice-options] button');
+    expect(Array.from(options, button => button.textContent)).toEqual(['换成 808', '只换踩镲']);
+    act(() => options[1].click());
+    expect(onSelectChoice).toHaveBeenCalledWith('只换踩镲');
+
+    render({ onSelectChoice }, [{ ...reply, content: '我改了两处：\n\n1. 收紧底鼓\n2. 降低贝斯\n\n你觉得这版怎么样？' }]);
+    expect(container.querySelector('[data-chat-choice-options]')).toBeNull();
+    expect(container.querySelector('[data-markdown-text] ol li')?.textContent).toBe('收紧底鼓');
+  });
+
   it('keeps footnote targets unique across separate assistant messages', () => {
     setMobileViewport(false);
     const footnote = '引用[^source]。\n\n[^source]: 参考说明';
@@ -1518,7 +1628,8 @@ describe('ConversationView chat streaming', () => {
     expect(summary.textContent).toContain('Sharp attack');
     expect(summary.textContent).not.toContain('Fine hi-hats');
     expect(container.textContent).not.toContain(search.content);
-    expect(container.querySelector('[data-agent-stage-animation="search"] svg.lucide-search')).not.toBeNull();
+    const stageIcon = container.querySelector('[data-agent-stage-animation="search"] .agent-stage-morph');
+    expect(stageIcon).not.toBeNull();
     act(() => summary.querySelector('button')!.click());
     expect(summary.textContent).toContain('Fine hi-hats');
 
@@ -1527,8 +1638,22 @@ describe('ConversationView chat streaming', () => {
     expect(container.textContent).not.toContain('Fine hi-hats');
 
     const arrange = { ...search, id: 'arrange', toolName: 'setCode', content: 'Arranging…' };
-    render({}, [user, search, arrange]);
-    expect(container.textContent).toContain('Arranging…');
+    const path = stageIcon!.querySelector('path')!;
+    const startingShape = path.getAttribute('d');
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
+    try {
+      render({}, [user, search, arrange]);
+      expect(container.textContent).toContain('Arranging…');
+      expect(container.querySelector('[data-agent-stage-animation="drawing"] .agent-stage-morph path')).toBe(path);
+      expect(path.getAttribute('d')).toBe(startingShape);
+      act(() => vi.advanceTimersByTime(64));
+      const intermediateShape = path.getAttribute('d');
+      expect(intermediateShape).not.toBe(startingShape);
+      act(() => vi.advanceTimersByTime(1200));
+      expect(path.getAttribute('d')).not.toBe(intermediateShape);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(container.querySelector('[data-sample-search-summary]')).toBeNull();
 
     render({}, [user, { ...search, sampleSearchSummary: undefined }]);

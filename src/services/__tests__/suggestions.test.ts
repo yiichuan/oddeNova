@@ -72,6 +72,32 @@ describe('next-step helpers', () => {
     ].join('\n'))).toBe(false);
   });
 
+  it('recognizes an explicit invitation to choose even when the reply has no question mark', () => {
+    const explanation = [
+      '现在鼓是两层。你说“换一种鼓”，我想知道换的是哪一层、换成什么气质：',
+      '',
+      '1. 两层都换成 808 音色',
+      '2. 保持 909，把节奏切得更碎',
+      '3. 只换踩镲',
+      '4. 整体换成更轻的 breakbeat 采样',
+      '',
+      '你选一个，我再往下走。',
+    ].join('\n');
+    expect(parseStepwiseChoice(explanation)).toEqual({
+      content: '现在鼓是两层。你说“换一种鼓”，我想知道换的是哪一层、换成什么气质：\n\n你选一个，我再往下走。',
+      options: ['两层都换成 808 音色', '保持 909，把节奏切得更碎', '只换踩镲', '整体换成更轻的 breakbeat 采样'],
+    });
+  });
+
+  it('supports a direct selection question before options separated by blank lines', () => {
+    expect(parseStepwiseChoice('你想先听哪一种？\n\n1、暖电钢琴\n\n2、原声钢琴')?.options).toEqual(['暖电钢琴', '原声钢琴']);
+  });
+
+  it('does not turn a change summary followed by a feedback question into choices', () => {
+    expect(parseStepwiseChoice('我改了两处：\n\n1. 收紧底鼓\n2. 降低贝斯\n\n你觉得这版怎么样？')).toBeNull();
+    expect(parseStepwiseChoice('Changes made:\n\n1. Shortened the kick\n2. Lowered the bass\n\nHow does it sound?')).toBeNull();
+  });
+
   it('does not mistake a question-led numbered change summary for choice mode', () => {
     expect(isStepwiseChoice([
       '我调整了哪些地方？',

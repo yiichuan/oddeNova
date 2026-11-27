@@ -409,7 +409,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
           request_retry: '重试模型请求', warn: '运行提示', iteration: '开始生成迭代', request_attempt_discarded: '丢弃未完成的模型响应',
         }[event.kind], data: event });
       }
-      if (!router || event.kind === 'router_progress' || event.kind === 'router_stage'
+      if (!router || event.kind === 'router_progress' || event.kind === 'router_stage' || event.kind === 'code_draft'
         || event.kind === 'router_reply_delta' || event.kind === 'router_reply_complete' || event.kind === 'router_reply_reset') onProgress(event);
     };
     const routed = router && ref ? await router.run({

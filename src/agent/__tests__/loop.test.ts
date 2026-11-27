@@ -20,6 +20,84 @@ import {
   type ProgressEvent,
 } from '../loop';
 import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
+import { createScopeValidator } from '../session-scope';
+
+it('publishes completed tempo and layers while writing, then publishes repairs only after setCode succeeds', async () => {
+  const tempo = 'setcps(0.5)';
+  const first = `${tempo}\nstack(\n  s("bd, ~"),`;
+  const draft = `${first}\n  note("c4")\n)`;
+  const repaired = draft.replace('note("c4")', 'note("d4")');
+  const updates: ProgressEvent[] = [];
+  const setCode = (id: string, code: string) => ({
+    id, name: 'setCode', arguments: JSON.stringify({ code, explanation: 'Working on the arrangement' }),
+  });
+  const chatWithTools = vi.fn<LLMCaller['chatWithTools']>()
+    .mockImplementationOnce(async (_messages, _tools, _text, _reasoning, _signal, _thinking, _level, stream) => {
+      stream?.('setCode', '{"code":"setcps(0.');
+      stream?.('setCode', '{"code":"setcps(0.5)\\nstack(\\n  s(');
+      expect(updates).toEqual([{ kind: 'code_draft', draft: { code: tempo, phase: 'writing' } }]);
+      stream?.('setCode', JSON.stringify({ explanation: '"code" is only a word here', code: first + '\n  note(' }).slice(0, -2));
+      expect(updates.at(-1)).toEqual({ kind: 'code_draft', draft: { code: first, phase: 'writing' } });
+      return { content: null, toolCalls: [setCode('draft', draft), { id: 'validate', name: 'validate', arguments: '{}' }] };
+    })
+    .mockImplementationOnce(async (_messages, _tools, _text, _reasoning, _signal, _thinking, _level, stream) => {
+      expect(stream).toBeUndefined();
+      return { content: null, toolCalls: [setCode('repair', repaired), { id: 'commit', name: 'commit', arguments: '{}' }] };
+    });
+  const result = await runAgentLoop({
+    llm: { chatWithTools }, initialCode: '', instruction: 'Create a piece', locale: 'en', systemPrompt: '',
+    onProgress: event => { if (event.kind === 'code_draft') updates.push(event); },
+  });
+  expect(updates).toEqual([
+    { kind: 'code_draft', draft: { code: tempo, phase: 'writing' } },
+    { kind: 'code_draft', draft: { code: first, phase: 'writing' } },
+    { kind: 'code_draft', draft: { code: draft, phase: 'writing' } },
+    { kind: 'code_draft', draft: { code: repaired, phase: 'repair' } },
+  ]);
+  expect(result.code).toBe(repaired);
+});
+
+it('keeps an existing score in view until a complete candidate can be diffed against it', async () => {
+  const baseline = 'setcps(0.5)\nstack(\n  s("bd")\n)';
+  const code = baseline.replace('s("bd")', 's("bd"),\n  s("hh")');
+  const chatWithTools = vi.fn<LLMCaller['chatWithTools']>(async (
+    _messages, _tools, _text, _reasoning, _signal, _thinking, _level, stream,
+  ) => {
+    expect(stream).toBeUndefined();
+    return { content: null, toolCalls: [
+      { id: 'draft', name: 'setCode', arguments: JSON.stringify({ code, explanation: 'Add hi-hats' }) },
+      { id: 'commit', name: 'commit', arguments: '{}' },
+    ] };
+  });
+  const onProgress = vi.fn();
+  await runAgentLoop({
+    llm: { chatWithTools }, initialCode: baseline, instruction: 'Add hi-hats', locale: 'en', systemPrompt: '', onProgress,
+  });
+  expect(onProgress.mock.calls.flat().filter(event => event.kind === 'code_draft')).toEqual([
+    { kind: 'code_draft', draft: { baseline, code, phase: 'writing' } },
+  ]);
+});
+
+it('reports removal of the authorized layer without reporting its surviving neighbor as changed', async () => {
+  const baseline = 'stack(\n  /* @layer DRUMS */ s("bd"),\n  /* @layer BASS */ note("c2"),\n  /* @layer CHORDS */ note("c4")\n)';
+  const candidate = baseline.replace('  /* @layer BASS */ note("c2"),\n', '');
+  const editScope = { kind: 'remove_layers' as const, targets: ['layer-2'] };
+  const chatWithTools: LLMCaller['chatWithTools'] = async () => ({ content: null, toolCalls: [
+    { id: 'draft', name: 'setCode', arguments: JSON.stringify({ code: candidate }) },
+    { id: 'check', name: 'validate', arguments: '{}' },
+    { id: 'commit', name: 'commit', arguments: '{}' },
+  ] });
+  const onProgress = vi.fn();
+  const result = await runAgentLoop({
+    llm: { chatWithTools }, initialCode: baseline, instruction: 'Remove BASS', locale: 'en', systemPrompt: '',
+    editScope, validateScope: createScopeValidator(editScope, baseline), onProgress,
+  });
+  expect(result).toMatchObject({ code: candidate, committed: true });
+  expect(onProgress.mock.calls.flat().filter(event => event.kind === 'session_progress' && event.entry.kind === 'operation'))
+    .toEqual([{ kind: 'session_progress', entry: {
+      kind: 'operation', facts: { action: 'removed from draft', layer: 'BASS', before: 'note("c2")' },
+    } }]);
+});
 
 describe('sample search diagnostics', () => {
   it('reports zero calls when the model does not search', async () => {

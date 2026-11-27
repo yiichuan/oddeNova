@@ -16,6 +16,7 @@ interface PreviewVariant {
   allowChoice?: boolean;
   suggestions?: string[];
   guidedReplyId?: string;
+  stageSequence?: readonly [RouterStage, ...RouterStage[]];
 }
 
 export type ModuleTarget = [selector: string, variant?: string, expand?: string];
@@ -159,7 +160,7 @@ const pendingHumming = {
 const stages: [RouterStage, string][] = [
   ['routing', '判断任务'], ['image', '读取图片'], ['humming', '分析哼唱'],
   ['search', '搜索音色'],
-  ['analysis', '分析音乐'], ['composition', '作曲'], ['structure', '组织结构'],
+  ['analysis', '分析音乐'], ['structure', '正在构思'], ['composition', '正在编排'],
   ['validation', '校验'], ['repair', '修复代码'], ['playback', '准备播放（Router）'], ['reply', '回复'],
 ];
 
@@ -331,10 +332,11 @@ export const conversationPreviewScenes: PreviewScene[] = [
     modules: [
       ['思考 / 构思 · Lottie', 'AgentStageIndicator', 'data-agent-stage-animation="thinking"', ['[data-agent-stage-animation="thinking"]', '判断任务']],
       ['搜索音色 · 放大镜', 'AgentStageIndicator', 'data-agent-stage-animation="search"', ['[data-agent-stage-animation="search"]', '搜索音色']],
-      ['识别哼唱 · 耳朵', 'AgentStageIndicator', 'data-agent-stage-animation="humming"', ['[data-agent-stage-animation="humming"]', '分析哼唱']],
-      ['识别图片 · 眼睛', 'AgentStageIndicator', 'data-agent-stage-animation="image"', ['[data-agent-stage-animation="image"]', '读取图片']],
-      ['编排操作 · 笔', 'AgentStageIndicator', 'data-agent-stage-animation="writing"', ['[data-agent-stage-animation="writing"]', '实时行动']],
+      ['识别哼唱 · 耳机', 'AgentStageIndicator', 'data-agent-stage-animation="humming"', ['[data-agent-stage-animation="humming"]', '分析哼唱']],
+      ['识别图片 · 眼镜', 'AgentStageIndicator', 'data-agent-stage-animation="image"', ['[data-agent-stage-animation="image"]', '读取图片']],
+      ['编排操作 · 手绘笔迹', 'AgentStageIndicator', 'data-agent-stage-animation="drawing"', ['[data-agent-stage-animation="drawing"]', '正在编排']],
       ['准备播放 · 光盘', 'AgentStageIndicator', 'data-agent-stage-animation="playback"', ['[data-agent-stage-animation="playback"]', '准备播放（Router）']],
+      ['生成状态 · 图标连续变形', 'AgentStageIndicator', '.agent-stage-morph', ['[data-agent-stage-animation]:has(> .agent-stage-morph)', '图标变形（循环）']],
       ['生成状态文案', view, 'data-live-reply-heading', ['[data-live-reply-heading] [role="status"]', '判断任务']],
       ['实时计划与编排操作', routerView, 'data-live-router-progress', ['[data-live-router-progress][data-router-progress="plan"]', '实时行动']],
       ['实时工具调用与构思详情', routerView, 'data-router-progress="tool" / "strategy"', ['[data-live-router-progress][data-router-progress="strategy"]', '实时行动']],
@@ -345,6 +347,7 @@ export const conversationPreviewScenes: PreviewScene[] = [
     ],
     variants: [
       live('等待模型'),
+      { ...live('图标变形（循环）'), stageSequence: ['image', 'humming', 'search', 'composition', 'playback'] },
       ...stages.map(([stage, name]) => live(name, [request], { stage })),
       live('实时行动', [request, plan, tool, strategy, kick, bass], { stage: 'composition', operation: '正在调整底鼓与贝斯…' }),
       live('流式正文', [request], { stage: 'reply', reply: summary.content }),

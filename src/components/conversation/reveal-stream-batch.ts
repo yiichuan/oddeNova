@@ -57,6 +57,9 @@ function addedLines(element: HTMLElement, previousLength: number): Line[] {
 }
 
 const sweepMask = 'linear-gradient(to right, #000 49%, transparent 53%)';
+// Soften the blur layer's horizontal edges where a line band crops the blur.
+// The clear layer keeps hard edges so previously revealed text stays crisp.
+const blurBandMask = 'linear-gradient(to bottom, transparent, #000 2px, #000 calc(100% - 2px), transparent)';
 const clearStart = 0.18;
 const blurEnd = 0.82;
 const MAX_BATCH_REVEAL_MS = 2400;
@@ -75,11 +78,11 @@ function lineFrames(lines: Line[], blurred: boolean): Keyframe[] {
       const blur = sweepPosition(time, 0, blurEnd);
       return {
         offset: (index + time) / lines.length,
-        maskImage: blurred ? `${sweepMask}, ${sweepMask}` : `linear-gradient(#000, #000), ${sweepMask}`,
-        maskComposite: blurred ? 'subtract' : 'add',
-        maskSize: blurred ? `${band}, ${band}` : `100% ${top}px, ${band}`,
+        maskImage: blurred ? `${blurBandMask}, ${sweepMask}, ${sweepMask}` : `linear-gradient(#000, #000), ${sweepMask}`,
+        maskComposite: blurred ? 'intersect, subtract' : 'add',
+        maskSize: blurred ? `100% ${bottom - top}px, ${band}, ${band}` : `100% ${top}px, ${band}`,
         maskRepeat: 'no-repeat',
-        maskPosition: blurred ? `${blur}% ${top}px, ${clear}% ${top}px` : `0px 0px, ${clear}% ${top}px`,
+        maskPosition: blurred ? `0px ${top}px, ${blur}% ${top}px, ${clear}% ${top}px` : `0px 0px, ${clear}% ${top}px`,
       };
     }),
   );

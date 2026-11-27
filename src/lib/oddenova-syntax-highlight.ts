@@ -16,7 +16,8 @@
 
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import type { Extension } from '@codemirror/state';
-import { tags as t, type Tag } from '@lezer/highlight';
+import { highlightCode, tagHighlighter, tags as t, type Tag } from '@lezer/highlight';
+import { parser } from '@lezer/javascript';
 
 type SyntaxHighlightSpec = {
   tag: Tag | readonly Tag[];
@@ -54,6 +55,22 @@ export const ODDENOVA_SYNTAX_HIGHLIGHT_SPECS: SyntaxHighlightSpec[] = [
 export const oddenovaSyntaxHighlight = syntaxHighlighting(
   HighlightStyle.define(ODDENOVA_SYNTAX_HIGHLIGHT_SPECS),
 );
+
+const previewHighlighter = tagHighlighter(ODDENOVA_SYNTAX_HIGHLIGHT_SPECS.map(({ tag }, index) => ({
+  tag, class: String(index),
+})));
+
+/** Highlight a read-only snapshot, including drafts with an open stack. */
+export function highlightOddenovaLines(code: string): { text: string; color?: string }[][] {
+  const lines: { text: string; color?: string }[][] = [[]];
+  highlightCode(code, parser.parse(code), previewHighlighter, (text, classes) => {
+    // Like CodeMirror's generated stylesheet, later specs take precedence
+    // when a token matches more than one style.
+    const spec = classes ? ODDENOVA_SYNTAX_HIGHLIGHT_SPECS[Math.max(...classes.split(' ').map(Number))] : undefined;
+    lines.at(-1)!.push({ text, color: spec?.color });
+  }, () => lines.push([]));
+  return lines;
+}
 
 type EditorViewLike = {
   dispatch: (transaction: { effects: unknown }) => void;

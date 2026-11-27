@@ -1,11 +1,11 @@
-import { parse, type CallExpression, type Expression, type Node } from 'acorn';
+import { parse, type CallExpression, type Expression, type Node, type Token } from 'acorn';
 
-export const editScopes = ['create', 'rewrite', 'add_layers', 'layers', 'section', 'parameter', 'tempo'] as const;
+export const editScopes = ['create', 'rewrite', 'add_layers', 'remove_layers', 'layers', 'section', 'parameter', 'tempo'] as const;
 export const scopedParameters = ['gain', 'lpf', 'hpf', 'pan', 'room', 'delay', 'attack', 'release'] as const;
 
 export type EditScope =
   | { kind: 'create' | 'rewrite' | 'add_layers' | 'tempo' }
-  | { kind: 'layers' | 'section'; targets: string[] }
+  | { kind: 'layers' | 'remove_layers' | 'section'; targets: string[] }
   | { kind: 'parameter'; targets: string[]; parameter: typeof scopedParameters[number] };
 
 interface Target {
@@ -26,14 +26,15 @@ function namedCall(expression: Expression, name: string): CallExpression | undef
   }
 }
 
-function describeScore(code: string) {
+function describeScore(code: string, tokens?: Token[]) {
   const layers: Target[] = [];
   const sections: Target[] = [];
   const tempos: Expression[] = [];
   let stack: CallExpression | undefined;
+  let stackCount = 0;
   let program;
   try {
-    program = parse(code, { ecmaVersion: 'latest', sourceType: 'module' });
+    program = parse(code, { ecmaVersion: 'latest', sourceType: 'module', onToken: tokens });
   } catch {
     return { valid: false, layers, sections, tempos, stack };
   }
@@ -71,7 +72,7 @@ function describeScore(code: string) {
 
     const mix = namedCall(expression, 'stack');
     if (mix && mix.arguments.every(arg => arg.type !== 'SpreadElement')) {
-      stack = stack ? undefined : mix;
+      stack = ++stackCount === 1 ? mix : undefined;
       let cursor = mix.callee.end;
       for (const arg of mix.arguments) {
         const comment = code.slice(cursor, arg.start).match(/\/\*\s*@layer\s+([^*]+?)\s*\*\//);
@@ -107,6 +108,66 @@ export function describeEditTargets(code: string, previewLength = 260) {
     sections: score.sections.map(describe),
     tempoEditable: score.tempos.length === 1,
     canAddLayers: Boolean(score.stack?.arguments.length && score.stack.arguments.length === score.layers.length),
+    canRemoveLayers: Boolean(score.stack && score.stack.arguments.length > 1 && score.stack.arguments.length === score.layers.length),
+  };
+}
+
+function stackSource(code: string, score: ReturnType<typeof describeScore>, tokens: Token[]) {
+  const stack = score.stack;
+  if (!stack || !stack.arguments.length || stack.arguments.length !== score.layers.length) return;
+  const open = tokens.find(token => token.start >= stack.callee.end && token.type.label === '(');
+  const close = tokens.find(token => token.end === stack.end && token.type.label === ')');
+  if (!open || !close || open.end > close.start) return;
+  const lastToken = tokens.findLast(token => token.start < close.start && token.end <= close.start);
+  if (!lastToken) return;
+
+  // Split on separators between AST arguments. Commas in strings, nested
+  // expressions and comments cannot split a layer. Keep its full source,
+  // including comments and grouping parentheses outside the AST node span.
+  let cursor = open.end;
+  const args: string[] = [];
+  const commas = tokens.filter(token => token.type.label === ',' && token.start >= open.end && token.end <= close.start);
+  let commaIndex = 0;
+  let trailing = false;
+  for (const [index, arg] of stack.arguments.entries()) {
+    const next = stack.arguments[index + 1];
+    while (commas[commaIndex] && commas[commaIndex].start < arg.end) commaIndex++;
+    const comma = commas[commaIndex];
+    const separator = comma && comma.end <= (next?.start ?? close.start) ? comma : undefined;
+    if (next && !separator) return;
+    args.push(code.slice(cursor, separator?.start ?? lastToken.end));
+    cursor = separator?.end ?? lastToken.end;
+    trailing = !next && Boolean(separator);
+    if (separator) commaIndex++;
+  }
+  return { prefix: code.slice(0, open.end), suffix: code.slice(close.start), args, trailing, tail: code.slice(cursor, close.start) };
+}
+
+function removeLayersValidator(original: string, targets: string[]): (candidate: string) => boolean {
+  const tokens: Token[] = [];
+  const score = describeScore(original, tokens);
+  const before = stackSource(original, score, tokens);
+  const ids = new Set(targets);
+  if (!before || !ids.size || ids.size !== targets.length || ids.size >= before.args.length) return () => false;
+  const retained = score.layers.flatMap(({ id }, index) => ids.has(id) ? [] : [index]);
+  if (before.args.length - retained.length !== ids.size) return () => false;
+
+  return candidate => {
+    const tokens: Token[] = [];
+    const after = stackSource(candidate, describeScore(candidate, tokens), tokens);
+    if (!after || after.args.length !== retained.length || before.prefix !== after.prefix || before.suffix !== after.suffix) return false;
+    const removedLast = retained.at(-1) !== before.args.length - 1;
+    if (removedLast ? before.tail.trim() !== after.tail.trim() : before.trailing !== after.trailing || before.tail !== after.tail) return false;
+
+    return retained.every((oldIndex, newIndex) => {
+      const trimBefore = (retained[newIndex - 1] ?? -1) !== oldIndex - 1;
+      const trimAfter = (retained[newIndex + 1] ?? before.args.length) !== oldIndex + 1;
+      const atSeam = (text: string) => {
+        if (trimBefore) text = text.trimStart();
+        return trimAfter ? text.trimEnd() : text;
+      };
+      return atSeam(before.args[oldIndex]) === atSeam(after.args[newIndex]);
+    });
   };
 }
 
@@ -159,6 +220,7 @@ function withoutParameter(code: string, node: Expression, name: string, candidat
 export function createScopeValidator(scope: EditScope, original: string): (candidate: string) => boolean {
   if (scope.kind === 'create') return () => !original.trim();
   if (scope.kind === 'rewrite') return () => Boolean(original.trim());
+  if (scope.kind === 'remove_layers') return removeLayersValidator(original, scope.targets);
   const before = describeScore(original);
   return candidate => {
     const after = describeScore(candidate);

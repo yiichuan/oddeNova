@@ -164,7 +164,8 @@ function step(code: string, i: number, st: ScanState): number {
     return 0;
   }
   if (st.inString) {
-    if (ch === st.inString && prev !== '\\') st.inString = null;
+    if (ch === '\\') return 1;
+    if (ch === st.inString) st.inString = null;
     return 0;
   }
   if (ch === '"' || ch === "'" || ch === '`') {
@@ -234,7 +235,7 @@ function findMatchingClose(code: string, openIdx: number): number {
   return -1;
 }
 
-function splitTopLevelCommas(text: string): { start: number; end: number }[] {
+function splitTopLevelCommas(text: string, includeTrailing = true): { start: number; end: number }[] {
   const spans: { start: number; end: number }[] = [];
   let depth = 0;
   const st = newScanState();
@@ -254,8 +255,22 @@ function splitTopLevelCommas(text: string): { start: number; end: number }[] {
       segStart = i + 1;
     }
   }
-  if (segStart < text.length) spans.push({ start: segStart, end: text.length });
+  if (includeTrailing && segStart < text.length) spans.push({ start: segStart, end: text.length });
   return spans;
+}
+
+/** Preview only tempo and stack arguments that have reached a delimiter. */
+export function completedDraftPrefix(code: string): string {
+  const stack = findTopLevelKeyword(code, 'stack');
+  const open = stack < 0 ? -1 : code.indexOf('(', stack + 'stack'.length);
+  if (open >= 0) {
+    const close = findMatchingClose(code, open);
+    if (close >= 0) return code.slice(0, close + 1);
+    const layer = splitTopLevelCommas(code.slice(open + 1), false).at(-1);
+    if (layer) return code.slice(0, open + layer.end + 2);
+  }
+  const tempo = findSetcps(code);
+  return tempo ? code.slice(0, tempo.end) : '';
 }
 
 // The first top-level tempo call. `setcpm(N)` is Strudel's per-minute form of

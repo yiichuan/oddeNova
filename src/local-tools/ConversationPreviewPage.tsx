@@ -5,6 +5,7 @@ import ConversationView from '../components/conversation/ConversationView';
 import { conversationPreviewScenes, type ModuleTarget, type PreviewScene } from './conversation-preview-fixtures';
 
 type ModuleSelection = { name: string; target: ModuleTarget };
+const STAGE_PREVIEW_STEP_MS = 2400;
 
 function Preview({ variant, selection }: { variant: PreviewScene['variants'][number]; selection: ModuleSelection | null }) {
   const panel = useRef<HTMLDivElement>(null);
@@ -14,6 +15,11 @@ function Preview({ variant, selection }: { variant: PreviewScene['variants'][num
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [selectedChoice, setSelectedChoice] = useState<ChatMessage | null>(null);
+  const [stageIndex, setStageIndex] = useState(0);
+  const sequence = variant.stageSequence;
+  const stage = sequence?.[stageIndex];
+  const fixtureProgress = variant.props?.liveRouterProgress;
+  const liveRouterProgress = useMemo(() => stage ? { stage } : fixtureProgress, [stage, fixtureProgress]);
   const messages = useMemo(() => selectedChoice ? [...variant.messages, selectedChoice] : variant.messages, [selectedChoice, variant.messages]);
 
   useLayoutEffect(() => {
@@ -21,6 +27,13 @@ function Preview({ variant, selection }: { variant: PreviewScene['variants'][num
     const scroll = scrollShell.current?.querySelector<HTMLElement>('.conversation-scroll');
     if (scroll) scroll.scrollTop = 0;
   }, [variant]);
+
+  useEffect(() => {
+    if (!loading || !sequence) return;
+    // Keep the conversation mounted so each stage morphs from the last one.
+    const timer = setInterval(() => setStageIndex(index => (index + 1) % sequence.length), STAGE_PREVIEW_STEP_MS);
+    return () => clearInterval(timer);
+  }, [loading, sequence]);
 
   useEffect(() => {
     if (!variant.props?.isLoading) return;
@@ -78,6 +91,7 @@ function Preview({ variant, selection }: { variant: PreviewScene['variants'][num
           className="min-h-0 flex-1 overflow-hidden rounded-t-region border border-border">
           <ConversationView
             {...variant.props}
+            liveRouterProgress={liveRouterProgress}
             messages={messages}
             onSelectChoice={variant.allowChoice ? text => {
               setSelectedChoice({ id: 'mock-selected-choice', role: 'user', content: text, timestamp: Date.now(), selectedChoice: true });

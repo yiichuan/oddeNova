@@ -13,29 +13,15 @@
   animation: agent-stage-search-orbit 1.8s linear infinite;
 }
 
-.agent-stage-indicator[data-agent-stage-animation="humming"] > svg {
-  animation: agent-stage-listen 1.75s ease-in-out infinite;
-}
-
-.agent-stage-indicator[data-agent-stage-animation="humming"]::after {
+.agent-stage-indicator > .agent-stage-waves {
   position: absolute;
-  top: 5px;
-  left: 1px;
-  height: 7px;
-  width: 4px;
-  border-left: 1px solid currentColor;
-  border-radius: 50%;
-  content: "";
+  inset: 0;
   opacity: .5;
-  animation: agent-stage-sound-wave 1.75s ease-out infinite;
+  animation: agent-stage-sound-wave .875s ease-in-out infinite alternate;
 }
 
 .agent-stage-indicator[data-agent-stage-animation="image"] > svg {
-  animation: agent-stage-blink 2.6s ease-in-out infinite;
-}
-
-.agent-stage-indicator[data-agent-stage-animation="image"] circle {
-  animation: agent-stage-look 2.6s ease-in-out infinite;
+  animation: agent-stage-scan 2.6s ease-in-out infinite;
 }
 
 .agent-stage-indicator[data-agent-stage-animation="writing"] {
@@ -72,6 +58,41 @@
   animation: agent-stage-second-line var(--writing-cycle) linear infinite;
 }
 
+.agent-stage-indicator[data-agent-stage-animation="drawing"] {
+  --drawing-cycle: 2s;
+}
+
+.agent-stage-ink path {
+  stroke-dasharray: 1;
+  opacity: .65;
+  animation: agent-stage-draw-ink var(--drawing-cycle) linear infinite;
+}
+
+.agent-stage-indicator[data-agent-stage-animation="drawing"] > .agent-stage-morph {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 11px;
+  height: 11px;
+  /* Match the nib at (2, 22) in the pen's 24-unit viewBox. */
+  offset-anchor: 8.33% 91.67%;
+  offset-rotate: 0deg;
+  offset-distance: 100%;
+  fill: var(--color-conversation-surface);
+  animation: agent-stage-draw-pen var(--drawing-cycle) linear infinite;
+}
+
+@keyframes agent-stage-draw-ink {
+  0%, 100% { stroke-dashoffset: 1; opacity: 0; }
+  12% { opacity: .65; }
+  72%, 85% { stroke-dashoffset: 0; opacity: .65; }
+}
+
+@keyframes agent-stage-draw-pen {
+  0%, 100% { offset-distance: 0%; }
+  72% { offset-distance: 100%; animation-timing-function: ease-in-out; }
+}
+
 .agent-stage-indicator[data-agent-stage-animation="playback"] > svg {
   animation: agent-stage-spin 1.5s linear infinite;
 }
@@ -82,26 +103,15 @@
   to { transform: scaleY(.625) rotate(360deg) translateX(2px) rotate(-360deg) scaleY(1.6); }
 }
 
-@keyframes agent-stage-listen {
-  0%, 100% { transform: rotate(0deg); }
-  28%, 55% { transform: translateX(1px) rotate(13deg); }
-}
-
 @keyframes agent-stage-sound-wave {
-  0%, 74%, 100% { opacity: 0; transform: translateX(0); }
-  25% { opacity: .8; }
-  65% { opacity: 0; transform: translateX(-2px); }
+  from { opacity: .4; transform: scaleX(1.1); }
+  to { opacity: .8; transform: scaleX(1.28); }
 }
 
-@keyframes agent-stage-blink {
-  0%, 77%, 87%, 100% { transform: scaleY(1); }
-  82% { transform: scaleY(.12); }
-}
-
-@keyframes agent-stage-look {
-  0%, 100% { transform: translateX(0); }
-  26%, 45% { transform: translateX(-2px); }
-  62%, 76% { transform: translateX(2px); }
+@keyframes agent-stage-scan {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  28%, 40% { transform: translateX(-1px) rotate(-7deg); }
+  65%, 77% { transform: translateX(1px) rotate(7deg); }
 }
 
 @keyframes agent-stage-write {
@@ -114,15 +124,15 @@
 }
 
 @keyframes agent-stage-first-line {
-  0% { transform: scaleX(0); }
+  0%, 100% { opacity: 0; transform: scaleX(0); }
   32%, 80% { opacity: .65; transform: scaleX(1); }
-  100% { opacity: 0; transform: scaleX(1); }
+  98% { opacity: 0; transform: scaleX(1); }
 }
 
 @keyframes agent-stage-second-line {
-  0%, 48% { transform: scaleX(0); }
+  0%, 48%, 100% { opacity: 0; transform: scaleX(0); }
   80% { opacity: .65; transform: scaleX(1); }
-  100% { opacity: 0; transform: scaleX(1); }
+  98% { opacity: 0; transform: scaleX(1); }
 }
 
 @keyframes agent-stage-spin {
@@ -131,7 +141,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .agent-stage-indicator[data-agent-stage-animation] > svg,
-  .agent-stage-indicator[data-agent-stage-animation] circle,
+  .agent-stage-ink path,
   .agent-stage-indicator[data-agent-stage-animation="writing"]::before,
   .agent-stage-indicator[data-agent-stage-animation]::after {
     animation: none;

@@ -625,6 +625,8 @@ export default function ConversationView({
   const liveStatusContentRef = useRef<HTMLDivElement>(null);
   const liveStatusPosition = useRef<{ node: HTMLElement; top: number } | null>(null);
   const liveStatusAnimation = useRef<Animation | null>(null);
+  const previousReplyLayout = useRef<{ receiptId?: string; body: 'waiting' | 'partial' | 'visible' } | null>(null);
+  const completedReplyCodeId = useRef<string | undefined>(undefined);
   // Track programmatic moves so their scroll events never count as a gesture.
   const autoScrollRef = useRef<{ target: number; until: number } | null>(null);
   const liveScroll = useRef<{ frame: number; end: number } | null>(null);
@@ -764,6 +766,12 @@ export default function ConversationView({
     [messages],
   );
   const lastUserMsgId = messages[lastUserIndex]?.id;
+  const liveReplyMessageId = liveReply && isLoading && lastUserIndex >= 0
+    ? messages.findLast((message, index) => index > lastUserIndex && message.role === 'assistant')?.id
+    : undefined;
+  const replyCodeMessageId = lastUserIndex >= 0
+    ? messages.findLast((message, index) => index > lastUserIndex && message.role === 'assistant' && message.code)?.id
+    : undefined;
   // The greeting bubble only ever occupies a fresh session (one message, the
   // greeting itself) — once a real turn has happened it stays out of the
   // scrollback entirely rather than sitting inline as a normal reply.
@@ -1010,6 +1018,27 @@ export default function ConversationView({
     const replyJustFinished = !turnInProgress && prevIsLoadingRef.current
       && messages.findLast(message => message.role !== 'progress')?.role === 'assistant';
     prevIsLoadingRef.current = turnInProgress;
+    if (turnJustStarted) completedReplyCodeId.current = undefined;
+    if (replyJustFinished) completedReplyCodeId.current = replyCodeMessageId;
+    const replyContainer = liveReplyMessageId
+      ? `[data-message-id="${CSS.escape(liveReplyMessageId)}"]`
+      : '[data-live-router-reply]';
+    const replyBody = !liveReply ? 'waiting'
+      : el.querySelector(`${replyContainer} > [data-markdown-text]:not(:empty)`) ? 'visible' : 'partial';
+    const receiptId = isLoading && routedStream ? replyCodeMessageId : undefined;
+    const previous = previousReplyLayout.current;
+    // The receipt text can appear before the streamed answer replaces it.
+    // Settle both layout changes before painting, then reveal text.
+    const replyLayoutChanged = isLoading && routedStream
+      && (previous?.receiptId !== receiptId
+        || ((previous?.body ?? 'waiting') !== replyBody && (Boolean(receiptId) || replyBody === 'visible')));
+    previousReplyLayout.current = isLoading ? { receiptId, body: replyBody } : null;
+    if (replyLayoutChanged) {
+      liveStatusAnimation.current?.cancel();
+      liveStatusAnimation.current = null;
+      cancelLiveScroll();
+      autoScrollRef.current = null;
+    }
     const draftJustAppeared = hasDraftSegment && !prevHasDraftSegmentRef.current;
     prevHasDraftSegmentRef.current = hasDraftSegment;
     if (isVideoMode && !scrollBottom) {
@@ -1087,7 +1116,7 @@ export default function ConversationView({
         if (moving) {
           const contentTop = statusTop + moving.offsetTop;
           const previous = liveStatusPosition.current;
-          if (previous?.node === moving && Math.abs(previous.top - contentTop) > 1 && allowMotion) {
+          if (previous?.node === moving && Math.abs(previous.top - contentTop) > 1 && allowMotion && !replyLayoutChanged) {
             const offset = moving.getBoundingClientRect().top - status.top - moving.offsetTop;
             liveStatusAnimation.current?.cancel();
             liveStatusAnimation.current = moving.animate?.([
@@ -1102,6 +1131,29 @@ export default function ConversationView({
         liveStatusAnimation.current?.cancel();
         liveStatusAnimation.current = null;
       }
+      if (replyJustFinished) target = bottomPin;
+      if (replyCodeMessageId && completedReplyCodeId.current === replyCodeMessageId) {
+        const id = CSS.escape(replyCodeMessageId);
+        const diff = el.querySelector<HTMLElement>(`[data-code-diff="${id}"]`);
+        const bar = diff?.firstElementChild ?? el.querySelector(`[data-code-bar="${id}"]`);
+        const widget = diff ?? bar?.parentElement;
+        if (widget && bar && el.clientHeight > 0) {
+          // Use the widget's layout edge: its sticky bar can measure at the
+          // current scroll position rather than where it will end up.
+          const bounds = el.getBoundingClientRect();
+          const barTop = el.scrollTop + widget.getBoundingClientRect().top - bounds.top - el.clientTop;
+          const barHeight = bar.getBoundingClientRect().height;
+          if (barHeight > 0) {
+            const inset = parseFloat(getComputedStyle(el).paddingTop) || 0;
+            const earliest = barTop + barHeight + 16 - el.clientHeight;
+            const latest = barTop - inset;
+            // If the bottom pin would bury the widget above the viewport,
+            // keep the current reading position when it still shows the bar.
+            if (target > latest) target = el.scrollTop;
+            target = Math.min(bottomPin, Math.max(earliest, Math.min(target, latest)));
+          }
+        }
+      }
       target = Math.max(0, target);
       // Recorded on every commit, taken-over or not: it is what the takeover
       // test measures deviation from, and an anchor left stale under a growing
@@ -1109,18 +1161,20 @@ export default function ConversationView({
       // following (see handleScroll / anchorTargetRef).
       anchorTargetRef.current = target;
       if (replyJustFinished) {
-        // The final reply can add new material (e.g. a code diff) below the
-        // streamed text. Pin to the actual bottom of that finished layout.
+        // The finished reply may add footer space below the code widget.
+        // Keep the widget visible while settling the final layout.
         cancelLiveScroll();
         autoScrollRef.current = null;
         userScrolledRef.current = false;
-        el.scrollTop = bottomPin;
+        el.scrollTop = target;
       } else if (!userScrolledRef.current) {
         const auto = autoScrollRef.current;
         const hasLiveOutput = liveStatus && routedStream
           && el.querySelector('[data-live-router-progress], [data-live-batch-text]');
         const followsStreamingReply = !preEl && hasLiveOutput;
-        if (followsStreamingReply && allowMotion && Math.abs(el.scrollTop - target) > 1) {
+        if (replyLayoutChanged) {
+          el.scrollTop = target;
+        } else if (followsStreamingReply && allowMotion && Math.abs(el.scrollTop - target) > 1) {
           if (!liveScroll.current || Math.abs((auto?.target ?? -1) - target) > 1) glideLiveScroll(el, target);
         } else if ((turnJustStarted || draftJustAppeared) && !hasLiveOutput && allowMotion) {
           cancelLiveScroll();
@@ -1140,7 +1194,7 @@ export default function ConversationView({
         }
       }
     }
-  }, [messages, turnInProgress, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive, hasDraftSegment, reasoningCollapsed, reasoningViewportSize, liveReply, liveLayoutVersion, routedStream, cancelLiveScroll, glideLiveScroll]);
+  }, [messages, isLoading, turnInProgress, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive, hasDraftSegment, reasoningCollapsed, reasoningViewportSize, liveReply, batch.replyComplete, liveReplyMessageId, replyCodeMessageId, liveLayoutVersion, routedStream, cancelLiveScroll, glideLiveScroll]);
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
@@ -1385,9 +1439,6 @@ export default function ConversationView({
   const liveStatusLabel = batch.operation
     ?? (stage ? t(routerStageLabels[stage])
       : isSearchingSamples ? t('searchingSamples') : liveStatus?.content ?? t('thinking'));
-  const liveReplyMessageId = liveReply
-    ? messages.findLast((message) => loadingTurnAssistantIds.has(message.id))?.id
-    : undefined;
   const routerProcess = useMemo(
     () => groupRouterProcess(messages, isLoading ? lastUserIndex : undefined),
     [messages, isLoading, lastUserIndex],
@@ -1717,9 +1768,11 @@ export default function ConversationView({
         // hanging space below the bubble for them — only apply to the turn's
         // final bubble; on intermediate narration the margin would just read
         // as a dead gap between paragraphs.
-        const showsTurnActions =
-          turnFinalAssistantIds.has(msg.id) && !loadingTurnAssistantIds.has(msg.id);
-        const stepwiseChoice = msg.inputMode === 'choice' ? parseStepwiseChoice(msg.content) : null;
+        const isLiveAssistant = loadingTurnAssistantIds.has(msg.id);
+        const showsTurnActions = turnFinalAssistantIds.has(msg.id) && !isLiveAssistant;
+        const replyCode = isLiveAssistant ? undefined : msg.code;
+        const choiceHandler = msg === latestConversationMessage && !turnInProgress && !isVideoMode ? onSelectChoice : undefined;
+        const stepwiseChoice = msg.inputMode === 'choice' || choiceHandler ? parseStepwiseChoice(msg.content) : null;
         const analyzedHumming = showsTurnActions
           ? messages.slice(0, messageIndex).findLast(message => message.role === 'user')?.humming
           : undefined;
@@ -1740,13 +1793,13 @@ export default function ConversationView({
               followsCollapsedActionGroup ? 'pt-0' : 'pt-2'
             }`}>
               {analyzedHumming && <HummingAnalysisSummary humming={analyzedHumming} />}
-              <MarkdownText liveBatch={loadingTurnAssistantIds.has(msg.id)}
+              <MarkdownText liveBatch={isLiveAssistant}
                 completeBlocksOnly={msg.id === liveReplyMessageId && onlyCompleteLiveBlocks}
                 content={msg.id === liveReplyMessageId ? liveReply ?? '' : stepwiseChoice?.content ?? msg.content} />
-              {stepwiseChoice && msg === latestConversationMessage && !turnInProgress && !isVideoMode && onSelectChoice && (
-                <StepwiseChoices options={stepwiseChoice.options} isMobile={isMobile} onSelect={onSelectChoice} />
+              {stepwiseChoice && choiceHandler && (
+                <StepwiseChoices options={stepwiseChoice.options} isMobile={isMobile} onSelect={choiceHandler} />
               )}
-              {msg.code && msg.revisionId && revisionsById.has(msg.revisionId) && (
+              {replyCode && msg.revisionId && revisionsById.has(msg.revisionId) && (
                 <CodeDiffView
                   messageId={msg.id}
                   revision={revisionsById.get(msg.revisionId)!}
@@ -1765,9 +1818,9 @@ export default function ConversationView({
                   onStop={onStopCode}
                 />
               )}
-              {msg.code && (!msg.revisionId || !revisionsById.has(msg.revisionId)) && (() => {
+              {replyCode && (!msg.revisionId || !revisionsById.has(msg.revisionId)) && (() => {
                 const isExpanded = expandedCode.has(msg.id);
-                const code = msg.code;
+                const code = replyCode;
                 const lineCount = code.split('\n').length;
                 // Hoisted out of the play key below: the firmer edge is worn by
                 // the whole widget, not just the key that started it.

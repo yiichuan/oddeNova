@@ -2197,7 +2197,7 @@ export default function App() {
     && !creationGuiding
     && !onboardingPresetLock
     && lastConversationMessage?.role === 'assistant'
-    && lastConversationMessage.inputMode === 'choice'
+    && !lastConversationMessage.isGreeting
     ? parseStepwiseChoice(lastConversationMessage.content)
     : null;
   const composerInputMode = pendingStepwiseChoice ? 'choice' : 'normal';
@@ -2824,6 +2824,7 @@ export default function App() {
                 previewing={preview !== null}
                 onExitPreview={exitPreview}
                 code={strudel.code}
+                codeDraft={sessions.liveRouterProgress?.codeDraft}
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
                 isPaused={strudel.isPaused}
@@ -3125,6 +3126,7 @@ export default function App() {
                 previewing={preview !== null}
                 onExitPreview={exitPreview}
                 code={strudel.code}
+                codeDraft={sessions.liveRouterProgress?.codeDraft}
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
                 isPaused={strudel.isPaused}

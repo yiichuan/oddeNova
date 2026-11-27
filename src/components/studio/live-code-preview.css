@@ -1,0 +1,90 @@
+.live-code-preview {
+  overflow-anchor: none;
+  padding: var(--code-editor-bottom-gap) 16px 16px 0;
+  font: 13px / 2 'ABeeZee', 'Microsoft YaHei UI', 'PingFang SC', sans-serif;
+  letter-spacing: .1em;
+}
+
+.live-code-preview > pre {
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.live-code-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.live-code-gutter {
+  color: var(--color-text-muted);
+  text-align: center;
+  user-select: none;
+}
+
+.live-code-clear {
+  display: block;
+}
+
+[data-live-code-row="writing"] .live-code-clear,
+.live-code-blur {
+  --live-code-sweep: linear-gradient(to right, #000 49%, transparent 53%);
+  mask-image: var(--live-code-sweep);
+  mask-size: 240% 100%;
+  mask-repeat: no-repeat;
+  animation: live-code-clear var(--live-code-write) linear var(--live-code-delay) both;
+}
+
+.live-code-blur {
+  position: absolute;
+  inset: 0;
+  mask-image: var(--live-code-sweep), var(--live-code-sweep);
+  mask-composite: subtract;
+  pointer-events: none;
+  user-select: none;
+  animation-name: live-code-blur;
+}
+
+.live-code-blur > span {
+  display: block;
+  filter: blur(2px);
+}
+
+@keyframes live-code-clear {
+  0%, 18% { mask-position: 100% 0; }
+  100% { mask-position: 0% 0; }
+}
+
+@keyframes live-code-blur {
+  0% { mask-position: 100% 0, 100% 0; }
+  18% { mask-position: 78% 0, 100% 0; }
+  82% { mask-position: 0% 0, 22% 0; }
+  100% { mask-position: 0% 0, 0% 0; }
+}
+
+[data-live-code-row="removing"] > :nth-child(2) {
+  animation: live-code-blur-fade var(--live-code-exit) ease-in both reverse;
+}
+
+[data-live-code-row="replace"] .live-code-clear,
+[data-live-code-row="repair"] .live-code-clear {
+  animation: live-code-blur-fade var(--live-code-fade-in) ease-out var(--live-code-delay) both;
+}
+
+@keyframes live-code-blur-fade {
+  from { filter: blur(3px); opacity: 0; }
+  to { filter: blur(0); opacity: 1; }
+}
+
+@media (max-width: 640px) {
+  .live-code-preview { font-size: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-live-code-row] .live-code-clear,
+  [data-live-code-row="removing"] > :nth-child(2) {
+    animation: none;
+    mask-image: none;
+  }
+  .live-code-blur { display: none; }
+}

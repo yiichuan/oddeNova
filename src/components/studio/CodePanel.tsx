@@ -34,9 +34,12 @@ import { anchorAbove, type ControlHoverLabelAnchor } from './control-hover-ancho
 import ControlBarParticles from './ControlBarParticles';
 import SessionSyncStatus from './SessionSyncStatus';
 import type { SessionSyncStatus as SyncStatus } from '../../lib/session-cloud-sync';
+import type { LiveCodeDraft } from '../../agent/progress';
+import LiveCodePreview from './LiveCodePreview';
 
 interface CodePanelProps {
   code: string;
+  codeDraft?: LiveCodeDraft;
   error: string | null;
   isPlaying: boolean;
   isPaused: boolean;
@@ -419,6 +422,7 @@ function PlaybackProgress({
 
 export default function CodePanel({
   code,
+  codeDraft,
   error,
   isPlaying,
   isPaused,
@@ -448,6 +452,19 @@ export default function CodePanel({
   onExitPreview,
   guidePlay,
 }: CodePanelProps) {
+  const sessionId = session?.id;
+  const [lastEdit, setLastEdit] = useState<{ sessionId?: string; draft: LiveCodeDraft }>();
+  const retainedEdit = !codeDraft && lastEdit?.sessionId === sessionId && lastEdit?.draft.code === code
+    ? lastEdit.draft : undefined;
+  if (codeDraft?.baseline && (lastEdit?.draft !== codeDraft || lastEdit.sessionId !== sessionId)) {
+    setLastEdit({ sessionId, draft: codeDraft });
+  } else if (lastEdit && !retainedEdit && (!codeDraft || !codeDraft.baseline)) {
+    setLastEdit(undefined);
+  }
+  const releaseEdit = useCallback((settled: LiveCodeDraft) => {
+    setLastEdit(current => current?.draft === settled ? undefined : current);
+  }, []);
+  const draft = previewing ? undefined : codeDraft ?? retainedEdit;
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const volumeButtonRef = useRef<HTMLButtonElement>(null);
@@ -727,14 +744,19 @@ export default function CodePanel({
           </div>
         )}
 
-        <div
-          ref={containerRef}
-          data-testid="code-panel-editor-root"
-          data-onboarding-target="code"
-          className={`code-editor-fade-top flex-1 min-h-0 flex flex-col justify-stretch items-stretch overflow-hidden *:h-full${
-            isMobile ? ' code-scroll-autohide' : ''
-          }`}
-        />
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div
+            ref={containerRef}
+            data-testid="code-panel-editor-root"
+            data-onboarding-target="code"
+            inert={Boolean(draft)}
+            className={`code-editor-fade-top flex-1 min-h-0 flex flex-col justify-stretch items-stretch overflow-hidden *:h-full${
+              isMobile ? ' code-scroll-autohide' : ''
+            }`}
+          />
+          {draft && <LiveCodePreview key={sessionId} draft={draft} editorRoot={containerRef}
+            onSettled={retainedEdit ? releaseEdit : undefined} />}
+        </div>
 
         {error && (
           <div

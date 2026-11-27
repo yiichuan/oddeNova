@@ -18,6 +18,10 @@ export function createAgentProgressHandler(
   sessionId: string,
 ): (event: ProgressEvent) => void {
   return (event) => {
+    if (event.kind === 'code_draft') {
+      sessions.updateLiveRouterProgress?.(sessionId, current => ({ ...current, codeDraft: event.draft }));
+      return;
+    }
     if (event.kind === 'request_attempt_discarded') {
       sessions.discardAgentAttempt(event.attemptId, sessionId);
       return;

@@ -796,6 +796,19 @@ describe('App session sync boundaries', () => {
     });
   }
 
+  it.each([
+    ['你选一个，我再往下走。', 'choice'],
+    ['你觉得这版怎么样？', 'normal'],
+  ])('detects actionable choices in a saved reply with normal input mode (%s)', async (ending, expected) => {
+    mocks.isMobile = false;
+    mocks.session.messages = [{
+      id: 'saved-options', role: 'assistant', inputMode: 'normal', timestamp: 2,
+      content: `关于鼓组。\n\n1. 换成 808 音色\n2. 只换踩镲\n\n${ending}`,
+    }];
+    await renderApp();
+    expect(mocks.sidebarProps?.inputMode).toBe(expected);
+  });
+
   /* The favorites workspace is a lazy chunk: once its gate opens, the page
      arrives on a later task. Waiting for its own root keeps the real loading
      boundary — no synchronous mock of the page. Each round hands React one

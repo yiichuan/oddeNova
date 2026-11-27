@@ -19,11 +19,18 @@ export interface SessionProgress {
 export type RouterStage = 'routing' | 'image' | 'humming' | 'search' | 'analysis'
   | 'composition' | 'structure' | 'validation' | 'repair' | 'playback' | 'reply';
 
+export interface LiveCodeDraft {
+  code: string;
+  phase: 'writing' | 'repair';
+  baseline?: string;
+}
+
 export interface LiveRouterProgress {
   stage?: RouterStage;
   operation?: string;
   reply?: string;
   replyComplete?: boolean;
+  codeDraft?: LiveCodeDraft;
 }
 
 export const ROUTER_STREAM_BATCH_MS = 400;

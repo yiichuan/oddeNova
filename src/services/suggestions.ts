@@ -40,47 +40,57 @@ export function stepwiseOptionText(option: string): string {
   return option.replace(/\*\*([^*]+)\*\*/g, '$1');
 }
 
+const numberedOption = /^[ \t]{0,3}(\d+)(?:[.)][ \t]+|[、．][ \t]*)(\S.*?)\s*$/;
+const chooseInChinese = /^(?:(?:请(?:你)?|你(?:先|来|可以|可)?|先|可以)\s*)?(?:(?:从中)?选(?:择)?\s*(?:一个|一项|一种|一条|一版|其一|其中|你(?:想|喜欢|偏好))|(?:回复|回|输入|发)\s*(?:一个|对应的|选项的)?\s*(?:序号|编号|数字|选项)|告诉我\s*(?:你的选择|你选|你想选))/;
+const chooseInEnglish = /^(?:(?:please|you can|go ahead and)\s+)?(?:(?:pick|choose|select)\s+(?:one|an option|a direction|your (?:favorite|preferred))\b|(?:reply|respond) with\s+(?:a|the|your)\s+(?:number|choice|option)\b)/i;
+
+function asksToChoose(text: string) {
+  const line = text.trim();
+  if (chooseInChinese.test(line) || chooseInEnglish.test(line)) return true;
+  if (!/[?？]$/.test(line)) return false;
+  const chineseChoice = /(?:哪(?:个|一?(?:种|项|条|版|套))|还是|第几项)/.test(line)
+    && /(?:想|希望|喜欢|偏好|愿意|你要|你选|你更|要不要)/.test(line);
+  const englishChoice = /\bwhich\b/i.test(line)
+    && /\b(?:would you|do you (?:want|prefer|choose)|should (?:we|I)|pick|choose)\b/i.test(line);
+  return chineseChoice || englishChoice;
+}
+
 /**
- * Parse the numbered option block emitted by stepwise choice mode.
- * The surrounding summary/question and reply invitation are required so an
- * incidental numbered list in an ordinary explanation is not enough.
+ * Parse a numbered block only when the surrounding reply asks the reader to
+ * choose. Instructions and numbered summaries stay ordinary Markdown.
  */
 export function parseStepwiseChoice(explanation: string): StepwiseChoice | null {
   if (parseNextSteps(explanation).length > 0) return null;
 
   const lines = explanation.split('\n');
   for (let start = 0; start < lines.length; start += 1) {
-    if (!/^\s*1\.\s+\S/.test(lines[start])) continue;
+    if (numberedOption.exec(lines[start])?.[1] !== '1') continue;
 
     const options: string[] = [];
     let end = start;
+    let consecutive = true;
     while (end < lines.length) {
-      const match = lines[end].match(/^\s*(\d+)\.\s+(.+?)\s*$/);
+      const match = numberedOption.exec(lines[end]);
       if (!match) break;
+      if (Number(match[1]) !== options.length + 1) consecutive = false;
       options.push(match[2]);
       end += 1;
+      // Markdown can put an empty line between list items.
+      let next = end;
+      while (next < lines.length && !lines[next].trim()) next += 1;
+      if (next < lines.length && numberedOption.test(lines[next])) end = next;
     }
 
-    const consecutive = lines.slice(start, end).every((line, index) => {
-      const match = line.match(/^\s*(\d+)\.\s+/);
-      return Number(match?.[1]) === index + 1;
-    });
     const leadIn = lines.slice(0, start).filter((line) => line.trim().length > 0);
     const invitation = lines.slice(end).filter((line) => line.trim().length > 0);
-    const questionBeforeOptions = /[?？]\s*$/.test(leadIn.at(-1) ?? '');
-    const questionAfterOptions = /[?？]\s*$/.test(invitation[0] ?? '');
-    const structuredQuestionBefore = questionBeforeOptions
-      && start > 0
-      && lines[start - 1].trim() === ''
-      && end < lines.length
-      && lines[end].trim() === '';
+    const asksAfter = asksToChoose(invitation[0] ?? '');
+    const asksBefore = asksToChoose(leadIn.at(-1) ?? '')
+      && start > 0 && !lines[start - 1].trim() && invitation.length === 0;
     if (
       options.length >= 2
       && options.length <= 4
       && consecutive
-      && leadIn.length > 0
-      && invitation.length > 0
-      && (questionAfterOptions || structuredQuestionBefore)
+      && (asksAfter || asksBefore)
     ) {
       const beforeOptions = lines.slice(0, start).join('\n').trim();
       const afterOptions = lines.slice(end).join('\n').trim();

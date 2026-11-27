@@ -81,10 +81,11 @@ function resolveScope(properties: Record<string, unknown>, context: RouterContex
       || (scope === 'add_layers' && context.editTargets?.canAddLayers)) return { kind: scope };
     return;
   }
-  if (scope !== 'layers' && scope !== 'section' && scope !== 'parameter') return;
+  if (scope !== 'layers' && scope !== 'remove_layers' && scope !== 'section' && scope !== 'parameter') return;
   const validTargets = scope === 'section' ? context.editTargets?.sections : context.editTargets?.layers;
   if (!Array.isArray(targets) || !targets.length || new Set(targets).size !== targets.length
     || !targets.every(target => typeof target === 'string' && validTargets?.some(entry => entry.id === target))) return;
+  if (scope === 'remove_layers' && (!context.editTargets?.canRemoveLayers || targets.length >= context.editTargets.layers.length)) return;
   if (scope !== 'parameter') return parameter === undefined ? { kind: scope, targets } : undefined;
   const method = scopedParameters.find(item => item === parameter);
   if (method) return { kind: scope, targets, parameter: method };

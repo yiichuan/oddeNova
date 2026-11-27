@@ -287,6 +287,125 @@ describe('CodePanel editor focus reporting', () => {
     expect(controlsLayer?.querySelector<HTMLElement>(':scope > div')?.style.borderRight).toBe('');
   });
 
+  it('previews live code without replacing the editor and repairs only changed rows in place', () => {
+    installMatchMedia(false);
+    vi.useFakeTimers();
+    const onMount = vi.fn();
+    const { container, root, rerender } = renderCodePanel({ onMount });
+    roots.push(root);
+    const editor = container.querySelector('[data-testid="code-panel-editor-root"]');
+    const getRect = HTMLElement.prototype.getBoundingClientRect;
+    const geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.matches('[data-live-code-preview]')) return new DOMRect(0, 0, 200, 100);
+      if (this.matches('[data-live-code-row]')) return new DOMRect(0, 140, 200, 20);
+      return getRect.call(this);
+    });
+    try {
+      const tempo = 'setcps(0.5)';
+      rerender({ codeDraft: { code: tempo, phase: 'writing' } });
+      const pane = container.querySelector<HTMLElement>('[data-live-code-preview]')!;
+      const tempoRow = pane.querySelector('[data-live-code-row]');
+      expect(tempoRow?.textContent).toContain(tempo);
+      expect(tempoRow?.querySelector('.live-code-clear [style*="--syntax-number"]')?.textContent).toBe('0.5');
+      expect(tempoRow?.querySelector('.live-code-blur [style*="--syntax-number"]')?.textContent).toBe('0.5');
+      expect(editor?.hasAttribute('inert')).toBe(true);
+      Object.defineProperty(pane, 'clientHeight', { value: 100 });
+
+      const draft = `${tempo}\nstack(\n  s("bd"),\n  note("c4")\n)`;
+      rerender({ codeDraft: { code: draft, phase: 'writing' } });
+      expect(pane.querySelector('[data-live-code-row]')).toBe(tempoRow);
+      expect(pane.textContent).toContain('note("c4")');
+      expect(pane.scrollTop).toBeGreaterThan(0);
+      const scroll = pane.scrollTop;
+
+      rerender({ codeDraft: { code: draft.replace('note("c4")', 'note("d4")'), phase: 'repair' } });
+      expect(pane.querySelectorAll('[data-live-code-row="removing"]')).toHaveLength(1);
+      expect(pane.querySelector('[data-live-code-row="removing"]')?.textContent).toContain('note("c4")');
+      expect(pane.querySelector('[data-live-code-row="removing"] .live-code-clear [style*="--syntax-string"]')?.textContent).toBe('"c4"');
+      act(() => vi.advanceTimersByTime(550));
+      expect(pane.querySelector('[data-live-code-row="repair"]')?.textContent).toContain('note("d4")');
+      expect(pane.querySelector('[data-live-code-row="repair"] .live-code-clear [style*="--syntax-string"]')?.textContent).toBe('"d4"');
+      expect(pane.querySelector('[data-live-code-row]')).toBe(tempoRow);
+      expect(pane.scrollTop).toBe(scroll);
+
+      rerender({});
+      expect(container.querySelector('[data-live-code-preview]')).toBeNull();
+      expect(container.querySelector('[data-testid="code-panel-editor-root"]')).toBe(editor);
+      expect(editor?.hasAttribute('inert')).toBe(false);
+      expect(onMount).toHaveBeenCalledTimes(1);
+    } finally {
+      geometry.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps existing layers steady while inserting, replacing and deleting just the affected blocks', () => {
+    installMatchMedia(false);
+    vi.useFakeTimers();
+    const drums = '  /* @layer drums */\n  s("bd")\n    .gain(0.5)';
+    const keys = '  /* @layer keys */\n  note("c4")\n    .s("piano")';
+    const bass = '  /* @layer bass */\n  note("c2")\n    .s("sine")';
+    const score = (...layers: string[]) => `setcps(0.5)\nstack(\n${layers.join(',\n')}\n)`;
+    const baseline = score(drums, keys);
+    const { container, root, rerender } = renderCodePanel({ code: baseline });
+    roots.push(root);
+    const rows = (phase: string) => [...container.querySelectorAll<HTMLElement>(`[data-live-code-row="${phase}"]`)];
+    const rowText = (row: HTMLElement) => row.querySelector('.live-code-clear')?.textContent;
+    const findRow = (text: string) => [...container.querySelectorAll<HTMLElement>('[data-live-code-row]')]
+      .find(row => rowText(row)?.includes(text));
+    const update = (code: string) => rerender({ codeDraft: { code, baseline, phase: 'writing' } });
+
+    update(score(drums, keys, bass));
+    expect(rows('writing').map(rowText)).toEqual(bass.split('\n'));
+    expect(rowText(findRow('.s("piano")')!)).toBe('    .s("piano"),');
+    expect(rows('removing')).toHaveLength(0);
+    const keysRow = findRow('@layer keys');
+    const pane = container.querySelector<HTMLElement>('[data-live-code-preview]')!;
+    Object.defineProperties(pane, {
+      clientHeight: { value: 100 },
+      getBoundingClientRect: { value: () => new DOMRect(0, 0, 200, 100) },
+    });
+    Object.defineProperty(findRow('@layer drums'), 'getBoundingClientRect', {
+      value: () => new DOMRect(0, 140, 200, 20),
+    });
+    Object.defineProperty(findRow('.gain(0.5)'), 'getBoundingClientRect', {
+      value: () => new DOMRect(0, 180, 200, 20),
+    });
+
+    const newDrums = drums.replace('0.5', '0.7');
+    update(score(newDrums, keys, bass));
+    expect(rows('removing').map(rowText)).toEqual((drums + ',').split('\n'));
+    expect(pane.scrollTop).toBe(116);
+    act(() => vi.advanceTimersByTime(550));
+    expect(rows('replace').map(rowText)).toEqual((newDrums + ',').split('\n'));
+    expect(rows('replace').map(row => row.style.getPropertyValue('--live-code-delay'))).toEqual(['0ms', '0ms', '0ms']);
+    expect(findRow('@layer keys')).toBe(keysRow);
+
+    update(score(newDrums, keys));
+    expect(rows('removing').map(rowText)).toEqual(bass.split('\n'));
+    act(() => vi.advanceTimersByTime(550));
+    expect(findRow('@layer bass')).toBeUndefined();
+    expect(findRow('@layer keys')).toBe(keysRow);
+    expect(rowText(findRow('.s("piano")')!)).toBe('    .s("piano")');
+
+    const finalCode = score(drums, keys);
+    update(finalCode);
+    rerender({ code: finalCode });
+    expect(rows('removing').map(rowText)).toEqual((newDrums + ',').split('\n'));
+    act(() => vi.advanceTimersByTime(550));
+    expect(rows('replace').map(rowText)).toEqual((drums + ',').split('\n'));
+    act(() => vi.advanceTimersByTime(550));
+    expect(container.querySelector('[data-live-code-preview]')).toBeNull();
+
+    update(score(newDrums, keys, bass));
+    expect(rows('removing').map(rowText)).toEqual((drums + ',').split('\n'));
+    expect(findRow('@layer bass')).toBeUndefined();
+    act(() => vi.advanceTimersByTime(550));
+    expect(rows('replace').map(rowText)).toEqual((newDrums + ',').split('\n'));
+    act(() => vi.advanceTimersByTime(550));
+    expect(rows('writing').map(rowText)).toEqual(bass.split('\n'));
+  });
+
   it("sets the playback accent from .color(), and drops back to the studio's orange without one", () => {
     installMatchMedia(false);
     const { container, root, rerender } = renderCodePanel({ accentColor: '#99CC3E' });

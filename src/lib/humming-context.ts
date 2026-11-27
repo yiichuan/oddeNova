@@ -124,14 +124,14 @@ export function formatHummingContext(
   if (!rawAttachment) return userText;
   const attachment = projectHummingAttachment(rawAttachment);
   if (!attachment) return userText;
-  const beginnerExplanation = 'In your final reply, add a beginner-friendly musical takeaway and one practical arranging decision. Mention the likely key or tonal center only when supported by the notes and phrase endings. When unclear, say so and suggest a useful starting chord or tonal center as an arranging choice, without presenting it as measured fact.';
+  const tonalGuidance = 'If discussing the key or tonal center, ground it in the notes and phrase endings. Describe an uncertain tonal center as an arranging choice.';
   const useWaveform = delivery !== 'history' && hasHummingWaveformReport(attachment);
   const useTool = useWaveform && delivery === 'tool';
   if (attachment.additionalTakes) {
     return [
       userText.trim() || 'Create a melody using these hummed phrases in the order recorded.',
       'Each take is a separate musical reference. Timestamps are relative to each take. Follow the user’s instructions for how to combine the takes.',
-      beginnerExplanation,
+      tonalGuidance,
       HUMMING_GRID_GUIDANCE,
       ...(useTool ? [
         'Before composing, call analyzeHummingWaveform to read all numbered takes in recording order. Match each take’s interpretation_reference to its own notes. A null reference means the style is unavailable. Use waveform estimates and the user’s direction to continue.',
@@ -150,7 +150,7 @@ export function formatHummingContext(
   return [
     instruction,
     '',
-    beginnerExplanation,
+    tonalGuidance,
     'Treat the attached phrase as a concrete melody edit. For this turn, create a single monophonic humming layer with one instrument. Add accompaniment or any other new layer only when the user explicitly requests it in this turn.',
     ...(useTool ? [
       'Use analyzeHummingWaveform to read the current recording’s estimated notes before composing or answering questions about the attached take. Note timestamps are relative to the recording start. Subtract melody_start_seconds for phrase-relative placement, preserve estimated durations and gaps, and use pitch contours to distinguish slides from repeated notes.',

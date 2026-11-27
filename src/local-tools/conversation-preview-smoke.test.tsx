@@ -10,6 +10,34 @@ vi.mock('../components/conversation/ThinkingLottie', () => ({
   ThinkingLottie: () => null,
 }));
 
+it('cycles the morph preview on a single mounted icon', () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+  const container = document.body.appendChild(document.createElement('div'));
+  const root = createRoot(container);
+  try {
+    act(() => root.render(<ConversationPreviewPage />));
+    const liveSceneIndex = conversationPreviewScenes.findIndex(scene => scene.id === 'live');
+    act(() => container.querySelectorAll<HTMLButtonElement>('nav button')[liveSceneIndex].click());
+    const module = [...container.querySelectorAll<HTMLButtonElement>('aside button')]
+      .find(button => button.textContent?.includes('图标连续变形'))!;
+    act(() => module.click());
+    act(() => vi.advanceTimersByTime(32));
+    const icon = container.querySelector('.agent-stage-morph')!;
+    expect(icon.closest('[data-agent-stage-animation]')?.getAttribute('data-agent-stage-animation')).toBe('image');
+    for (const [index, animation] of ['humming', 'search', 'drawing', 'playback', 'image'].entries()) {
+      act(() => vi.advanceTimersByTime(index === 0 ? 2400 : 2000));
+      act(() => vi.advanceTimersByTime(400));
+      expect(container.querySelector(`[data-agent-stage-animation="${animation}"] .agent-stage-morph`)).toBe(icon);
+    }
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
 it('renders the mock scenes through the preview page', async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
@@ -93,6 +121,13 @@ it('renders the mock scenes through the preview page', async () => {
         expect(container.querySelector('.conversation-scroll'), variant.name).not.toBeNull();
         expect(Boolean(container.querySelector('[data-live-reply-heading]')), variant.name)
           .toBe(Boolean(variant.props?.isLoading));
+        if (variant.name === '正在构思' || variant.name === '正在编排') {
+          const heading = container.querySelector('[data-live-reply-heading]');
+          const planning = variant.name === '正在构思';
+          expect(heading?.textContent).toContain(planning ? 'Planning the structure…' : 'Arranging…');
+          const animation = planning ? 'thinking' : 'drawing';
+          expect(heading?.querySelector(`[data-agent-stage-animation="${animation}"]`)).not.toBeNull();
+        }
         if (variant.name === '查找采样' || variant.name === '实时查找音色') {
           expect(container.querySelector('[data-sample-search-summary]')?.textContent).toContain('gm_epiano1');
           expect(container.querySelector('[data-sample-search-summary] [data-music-token="sample"]')?.textContent)
@@ -102,7 +137,7 @@ it('renders the mock scenes through the preview page', async () => {
             .find(token => token.textContent === 'perc');
           expect(perc?.parentElement?.textContent).toBe('细碎打击 · perc');
           expect(perc?.classList.contains('bg-brand-accent/20')).toBe(true);
-          expect(container.querySelector('[data-live-reply-heading] [data-agent-stage-animation="search"] svg.lucide-search')).not.toBeNull();
+          expect(container.querySelector('[data-live-reply-heading] [data-agent-stage-animation="search"] .agent-stage-morph')).not.toBeNull();
         }
         if (variant.name === 'Markdown 回复') {
           expect(container.querySelector('.conversation-scroll pre [data-music-token]')).toBeNull();
@@ -127,7 +162,8 @@ it('renders the mock scenes through the preview page', async () => {
           const progressText = container.querySelector('[data-assistant-humming-progress]')?.textContent;
           expect(progressText).toContain(t('hummingReadingWaveform'));
           expect(progressText).not.toContain('analyzeHummingWaveform');
-          expect(container.querySelector('[data-assistant-humming-progress] svg.lucide-ear')).not.toBeNull();
+          expect(container.querySelector('[data-assistant-humming-progress] [data-agent-stage-animation="humming"] .agent-stage-morph')).not.toBeNull();
+          expect(container.querySelector('[data-assistant-humming-progress] .agent-stage-waves')).not.toBeNull();
         }
         if (variant.props?.pendingHumming && !variant.props.hummingWaveformToolCalled) {
           expect(container.querySelector('[data-assistant-humming-progress]')?.textContent).toContain(t('hummingTranscribing'));

@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactElement } from 'react';
-import LottieImport, { type LottieComponentProps } from 'lottie-react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
+import LottieImport, { type LottieComponentProps, type LottieRefCurrentProps } from 'lottie-react';
 
 // Vite's default resolve.mainFields prefers lottie-react's UMD `browser` build,
 // whose default export is the module namespace object ({ default, useLottie, … })
@@ -15,6 +15,9 @@ const Lottie = ((LottieImport as unknown as { default?: unknown }).default ??
 // nothing fetches at startup — the first mount of the thinking indicator, and
 // only that, starts the request.
 const SRC = '/animation/flash02.json';
+// Play the moving flash back and forth before the asset's exit masks erase it.
+const FORWARD: [number, number] = [4, 20];
+const BACKWARD: [number, number] = [20, 4];
 let cached: object | null = null;
 let inflight: Promise<object> | null = null;
 
@@ -41,6 +44,8 @@ interface ThinkingLottieProps {
 
 /** Looping "flash" animation shown next to the "thinking…" label while the agent runs. */
 export function ThinkingLottie({ className }: ThinkingLottieProps) {
+  const lottie = useRef<LottieRefCurrentProps>(null);
+  const reverseNext = useRef(true);
   // Each mount hands lottie its own deep clone: lottie-web mutates the
   // animationData object in place while parsing, so re-using the shared
 // cached object on a later mount (each thinking phase can mount this component)
@@ -75,5 +80,12 @@ export function ThinkingLottie({ className }: ThinkingLottieProps) {
     return <span className={rootClass} />;
   }
 
-  return <Lottie animationData={data} loop autoplay className={rootClass} />;
+  return <Lottie animationData={data} initialSegment={FORWARD} lottieRef={lottie}
+    loop={false} autoplay={!window.matchMedia('(prefers-reduced-motion: reduce)').matches}
+    onComplete={() => {
+      const segment = reverseNext.current ? BACKWARD : FORWARD;
+      reverseNext.current = !reverseNext.current;
+      lottie.current?.playSegments(segment, true);
+    }}
+    className={rootClass} />;
 }

@@ -1,7 +1,8 @@
 import type { ImageAttachment, UserContent } from '../lib/image-types';
 import { hasHummingWaveformReport } from '../lib/humming-context';
-import type { RouterProgress, RouterStage, SessionProgress } from './progress';
-import { describeEditTargets } from './session-scope';
+import type { LiveCodeDraft, RouterProgress, RouterStage, SessionProgress } from './progress';
+import { streamedCodePreview } from './streamed-code';
+import { describeEditTargets, type EditScope } from './session-scope';
 import type { AgentTraceSink } from '../lib/agent-trace';
 // Agent loop. Repeatedly calls the model with the tool schemas, dispatches
 // each returned tool_call, feeds results back, and terminates when:
@@ -73,7 +74,8 @@ export interface LLMCaller {
     /** When false, suppress the reasoning/thinking chain for this call (default true). */
     enableThinking?: boolean,
     /** How deep to think when enabled; ignored when enableThinking is false (default 'medium'). */
-    thinkingLevel?: ThinkingLevel
+    thinkingLevel?: ThinkingLevel,
+    onToolArguments?: (name: string, args: string) => void,
   ): Promise<{
     content: string | null;
     /** DeepSeek thinking mode: pass through so the loop can echo it back. */
@@ -85,6 +87,7 @@ export interface LLMCaller {
 }
 
 export type ProgressEvent =
+  | { kind: 'code_draft'; draft?: LiveCodeDraft }
   | { kind: 'router_progress'; entry: RouterProgress }
   | { kind: 'router_stage'; stage: RouterStage }
   | { kind: 'router_reply_delta'; delta: string; attemptId?: never }
@@ -113,6 +116,7 @@ export interface RunAgentOptions {
   instruction: string;
   trace?: AgentTraceSink;
   validateScope?: ToolContext['validateScope'];
+  editScope?: EditScope;
   preparedUserContent?: UserContent;
   preparedHistory?: ChatMsg[];
   locale: 'zh' | 'en';
@@ -178,6 +182,8 @@ interface ChatWithToolsRetryOptions {
   enableThinking: boolean;
   thinkingLevel: ThinkingLevel;
   publishModelText: boolean;
+  onToolArguments?: (name: string, args: string) => void;
+  onDiscardDraft?: () => void;
 }
 
 async function chatWithToolsWithRetry(
@@ -193,6 +199,8 @@ async function chatWithToolsWithRetry(
     enableThinking,
     thinkingLevel,
     publishModelText,
+    onToolArguments,
+    onDiscardDraft,
   } = opts;
 
   const onModelText = publishModelText ? onProgress : undefined;
@@ -217,6 +225,7 @@ async function chatWithToolsWithRetry(
         signal,
         enableThinking,
         thinkingLevel,
+        ...(onToolArguments ? [onToolArguments] as const : []),
       );
 
       if (!response.content?.trim() && response.toolCalls.length === 0) {
@@ -226,6 +235,7 @@ async function chatWithToolsWithRetry(
       onProgress?.({ kind: 'request_attempt_succeeded', attemptId });
       return response;
     } catch (error) {
+      onDiscardDraft?.();
       onProgress?.({ kind: 'request_attempt_discarded', attemptId });
       if (
         attempt === MAX_REQUEST_ATTEMPTS
@@ -316,6 +326,15 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     finalCode: null,
   };
   const isZh = locale === 'zh';
+  const draftBaseline = initialCode.trim() ? initialCode : undefined;
+  let checkingCode = false;
+  let acceptedDraft: LiveCodeDraft | undefined;
+  let visibleDraft: LiveCodeDraft | undefined;
+  const previewDraft = (draft?: LiveCodeDraft) => {
+    if (draft?.code === visibleDraft?.code && draft?.phase === visibleDraft?.phase) return;
+    visibleDraft = draft;
+    onProgress?.({ kind: 'code_draft', draft });
+  };
   let iterationStarted = performance.now();
   const reportSession = opts.validateScope
     ? (entry: SessionProgress) => onProgress?.({
@@ -388,6 +407,14 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       enableThinking,
       thinkingLevel,
       publishModelText: !opts.validateScope,
+      // A partial replacement has no evidence about which existing layers
+      // it will keep. For edits, preview the diff once setCode has accepted it.
+      onToolArguments: !draftBaseline && !checkingCode && onProgress ? (name, args) => {
+        if (name !== 'setCode') return;
+        const code = streamedCodePreview(args);
+        if (code) previewDraft({ code, phase: 'writing' });
+      } : undefined,
+      onDiscardDraft: () => previewDraft(acceptedDraft),
     });
     if (resp.usage) lastUsage = resp.usage;
 
@@ -415,6 +442,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     });
 
     if (resp.toolCalls.length === 0) {
+      previewDraft(acceptedDraft);
       // No tools requested. A substantive text response is a legal chat turn
       // in unified-agent mode; empty responses were rejected by the request
       // retry boundary before reaching this point.
@@ -469,6 +497,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
       console.debug(`[loop] iter ${i + 1} tool_call: ${call.name}`, parsedArgs);
       onProgress?.({ kind: 'tool_call', name: call.name, args: parsedArgs });
+      if (call.name === 'validate' || call.name === 'commit') checkingCode = true;
       const toolStarted = performance.now();
       const beforeEdit = state.code;
       if (call.name !== 'reportArrangement') reportSession?.({ kind: 'tool', facts: {
@@ -484,11 +513,32 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
       try {
         const outcome = await dispatchToolCall(call, ctx, undefined, trace);
+        if (call.name === 'setCode') {
+          if (outcome.result.ok && (acceptedDraft || state.code !== draftBaseline)) {
+            acceptedDraft = {
+              code: state.code,
+              phase: checkingCode ? 'repair' : 'writing',
+              ...(draftBaseline !== undefined && { baseline: draftBaseline }),
+            };
+          }
+          previewDraft(acceptedDraft);
+        }
         if (call.name === 'searchSamples') {
           sampleDebug('result', { iteration: i + 1, callId: call.id,
             durationMs: Math.round(performance.now() - toolStarted), result: outcome.result });
         }
-        if (reportSession && call.name === 'setCode' && outcome.result.ok && beforeEdit !== state.code) {
+        if (reportSession && call.name === 'setCode' && outcome.result.ok && beforeEdit !== state.code
+          && opts.editScope?.kind === 'remove_layers') {
+          if (beforeEdit === initialCode) {
+            const targets = new Set(opts.editScope.targets);
+            for (const layer of describeEditTargets(beforeEdit, 800).layers) {
+              if (!targets.has(layer.id)) continue;
+              reportSession({ kind: 'operation', facts: {
+                layer: layer.label ?? layer.id, action: 'removed from draft', before: layer.preview,
+              } });
+            }
+          }
+        } else if (reportSession && call.name === 'setCode' && outcome.result.ok && beforeEdit !== state.code) {
           const oldTargets = describeEditTargets(beforeEdit, Infinity);
           const newTargets = describeEditTargets(state.code, Infinity);
           const before = new Map([...oldTargets.layers, ...oldTargets.sections].map(layer => [layer.id, layer.preview]));
@@ -538,6 +588,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
           error: outcome.result.error,
         });
       } catch (e) {
+        if (call.name === 'setCode') previewDraft(acceptedDraft);
         if (e instanceof CommitSignal) {
           reportSession?.({ kind: 'tool', facts: { action: call.name, phase: 'finished', ok: true, candidateOnly: true } });
           // Commit terminates the loop. Record the tool reply so the
@@ -587,6 +638,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       }
     }
 
+    previewDraft(acceptedDraft);
     for (const o of outcomes) {
       messages.push({
         role: 'tool',

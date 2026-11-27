@@ -1034,12 +1034,19 @@ export default function PrimaryNav({
                   }}
                   {...(splitting ? {} : getTooltipTriggerProps(faceLabel))}
                   className={`group absolute left-[10px] top-0 flex h-10 w-[40px] items-center justify-center rounded-[6px] text-text-secondary transition-[transform,background-color,color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
-                    showingSectionMark ? '' : 'hover:bg-surface-hover hover:text-text-primary'
+                    showingSectionMark ? '' : expanded ? 'hover:text-text-primary' : 'hover:bg-surface-hover hover:text-text-primary'
                   }`}
-                  style={{ transform: expanded ? 'translateX(128px)' : 'translateX(0)' }}
+                  style={{ transform: expanded ? 'translateX(134px)' : 'translateX(0)' }}
                 >
                   {expanded ? (
-                    <PanelLeft size={21} strokeWidth={1.6} aria-hidden="true" />
+                    <span
+                      aria-hidden="true"
+                      className={`flex size-8 items-center justify-center rounded-[6px] transition-colors motion-reduce:transition-none ${
+                        showingSectionMark ? '' : 'group-hover:bg-surface-hover'
+                      }`}
+                    >
+                      <PanelLeft size={17} strokeWidth={1.6} />
+                    </span>
                   ) : (
                     <>
                       <span

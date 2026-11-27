@@ -11,6 +11,7 @@ export function formatExecutionReceipt(scope: EditScope, receipt: ExecutionRecei
       create: 'agentRouterCreated',
       rewrite: 'agentRevisionSaved',
       add_layers: 'agentRouterAddedLayers',
+      remove_layers: 'agentRouterRemovedLayers',
       layers: 'agentRouterLayersSaved',
       section: 'agentRouterSectionSaved',
       parameter: 'agentRouterParameterSaved',

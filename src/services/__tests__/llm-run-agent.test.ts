@@ -90,7 +90,7 @@ vi.mock('../../demo/demo-llm', () => ({
   createDemoMoodLLMCaller: vi.fn(),
 }));
 
-import { runAgent, classifyIntent, runConversationTurn, type ConversationRequest } from '../llm';
+import { runAgent, classifyIntent, getActiveLLMCaller, runConversationTurn, type ConversationRequest } from '../llm';
 import type { LLMCaller } from '../../agent/loop';
 import { isZh } from '../../lib/i18n';
 import { buildPersonaBlock } from '../../persona/oddenova';
@@ -116,6 +116,34 @@ describe('runAgent conversationHistory pass-through', () => {
         usage: { input_tokens: 1, output_tokens: 1 },
       })),
     });
+  });
+
+  it('publishes cumulative OpenAI tool arguments before the response finishes', async () => {
+    const onArguments = vi.fn();
+    openAIChatCreateMock.mockImplementationOnce(async function* () {
+      yield { choices: [{ delta: { tool_calls: [{ index: 0, id: 'draft', function: { name: 'setCode', arguments: '{"code":"' } }] } }] };
+      expect(onArguments).toHaveBeenCalledWith('setCode', '{"code":"');
+      yield { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 's(1)"}' } }] } }] };
+    });
+    const response = await getActiveLLMCaller().chatWithTools([], [], undefined, undefined, undefined, false, 'medium', onArguments);
+    expect(onArguments.mock.calls.at(-1)).toEqual(['setCode', '{"code":"s(1)"}']);
+    expect(response.toolCalls[0].arguments).toBe('{"code":"s(1)"}');
+  });
+
+  it('publishes cumulative Anthropic tool arguments from indexed stream events', async () => {
+    getActiveModelConfigMock.mockReturnValue({ ...officialModelConfig, provider: 'anthropic', protocol: 'anthropic' });
+    const onArguments = vi.fn();
+    const on = vi.fn();
+    anthropicStreamMock.mockReturnValueOnce({ on, finalMessage: async () => {
+      const stream = on.mock.calls.find(([name]) => name === 'streamEvent')?.[1];
+      stream({ type: 'content_block_start', index: 2, content_block: { type: 'tool_use', name: 'setCode' } });
+      stream({ type: 'content_block_delta', index: 2, delta: { type: 'input_json_delta', partial_json: '{"code":"' } });
+      stream({ type: 'content_block_delta', index: 2, delta: { type: 'input_json_delta', partial_json: 's(1)"}' } });
+      expect(onArguments.mock.calls).toEqual([['setCode', '{"code":"'], ['setCode', '{"code":"s(1)"}']]);
+      return { content: [{ type: 'tool_use', id: 'draft', name: 'setCode', input: { code: 's(1)' } }], usage: { input_tokens: 1, output_tokens: 1 } };
+    } });
+    const response = await getActiveLLMCaller().chatWithTools([], [], undefined, undefined, undefined, false, 'medium', onArguments);
+    expect(response.toolCalls[0].arguments).toBe('{"code":"s(1)"}');
   });
 
   it('passes the browser locale to the system prompt and agent loop', async () => {
@@ -779,8 +807,10 @@ describe('Router and Session integration', () => {
       expect(messages).toContain('start_seconds');
       expect(messages).toContain('0.25');
       expect(messages).not.toContain('analyzeHummingWaveform');
+      expect(messages).not.toContain('beginner-friendly musical takeaway');
     }
     expect(runAgentLoopMock).not.toHaveBeenCalled();
+    expect(anthropicStreamMock.mock.calls[1][0].system).toContain('Skip unsolicited beginner-tip sections.');
   });
 
   it('loads the full built-in persona only for the user-facing reply to a greeting', async () => {
@@ -906,6 +936,23 @@ describe('Router and Session integration', () => {
     expect(JSON.stringify(result)).not.toContain('Private working notes');
   });
 
+  it('authorizes and accepts a candidate that deletes the requested bass layer', async () => {
+    const baseline = 'setcps(0.55)\nstack(\n  /* @layer DRUMS */ s("bd"),\n  /* @layer BASS */ note("c2"),\n  /* @layer CHORDS */ note("c4")\n)';
+    const candidate = baseline.replace('  /* @layer BASS */ note("c2"),\n', '');
+    anthropicStreamMock.mockReturnValueOnce(respond('', 'executeSession', {
+      instruction: 'Remove BASS and leave the rest untouched', scope: 'remove_layers',
+      targets: ['layer-2'], needsSynthesis: false,
+    }));
+    runAgentLoopMock.mockImplementationOnce(async (options: RunAgentOptions) => {
+      expect(options.editScope).toEqual({ kind: 'remove_layers', targets: ['layer-2'] });
+      expect(options.validateScope?.(candidate)).toBe(true);
+      return { code: candidate, explanation: '', iterations: 2, committed: true };
+    });
+    await expect(runConversationTurn(request('去掉 bass 层', { current: { code: baseline } }))).resolves.toMatchObject({
+      kind: 'execute', status: 'candidate', result: { code: candidate, committed: true },
+    });
+  });
+
   it('displays a search stage only while the sample search tool is running', async () => {
     anthropicStreamMock.mockReturnValueOnce(respond('', 'executeSession', editTask()))
       .mockReturnValue(respond('[]'));
@@ -919,7 +966,7 @@ describe('Router and Session integration', () => {
     const onProgress = vi.fn();
     await runConversationTurn(request('Find a softer kick.', { onProgress }));
     expect(onProgress.mock.calls.flat().filter(event => event.kind === 'router_stage').map(event => event.stage))
-      .toEqual(['routing', 'composition', 'search', 'analysis']);
+      .toEqual(['routing', 'structure', 'search', 'analysis']);
   });
 
   it('uses the Session plan as the only opening arrangement plan', async () => {
@@ -928,9 +975,15 @@ describe('Router and Session integration', () => {
     })).mockReturnValueOnce(respond('[{"index":0,"title":"I’ll shape the arrangement in three sections.","detail":""}]'));
     runAgentLoopMock.mockImplementationOnce(async ({ onProgress }: RunAgentOptions) => {
       onProgress?.({ kind: 'session_progress', entry: { kind: 'plan', facts: { nextStep: 'shape three sections' } } });
-      return { code: 's("bd")', explanation: '', iterations: 1, committed: true };
+      onProgress?.({ kind: 'session_progress', entry: { kind: 'strategy', facts: { musicalDecisions: 'three contrasting sections' } } });
+      onProgress?.({ kind: 'iteration', index: 2 });
+      onProgress?.({ kind: 'tool_call', name: 'setCode', args: {} });
+      return { code: 's("bd")', explanation: '', iterations: 2, committed: true };
     });
-    await runConversationTurn(request('Compose a piece.', { current: { code: '' }, onProgress: vi.fn() }));
+    const onProgress = vi.fn();
+    await runConversationTurn(request('Compose a piece.', { current: { code: '' }, onProgress }));
+    expect(onProgress.mock.calls.flat().filter(event => event.kind === 'router_stage').map(event => event.stage))
+      .toEqual(['routing', 'structure', 'composition']);
     const narration = JSON.stringify(anthropicStreamMock.mock.calls[1][0].messages);
     expect(narration).toContain('shape three sections');
     expect(narration).not.toContain('sketch the structure of the composition');
@@ -952,7 +1005,7 @@ describe('Router and Session integration', () => {
     const onProgress = vi.fn();
     await runConversationTurn(request('Lower the kick.', { onProgress }));
     const stages = onProgress.mock.calls.flat().filter(event => event.kind === 'router_stage').map(event => event.stage);
-    expect(stages).toEqual(['routing', 'composition', 'validation', 'repair', 'validation']);
+    expect(stages).toEqual(['routing', 'structure', 'validation', 'repair', 'validation']);
     const narration = JSON.stringify(anthropicStreamMock.mock.calls[1][0].messages);
     expect(narration).toContain('setCode');
     expect(narration).not.toContain('fix private syntax details');
