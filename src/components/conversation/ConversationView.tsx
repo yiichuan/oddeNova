@@ -1298,6 +1298,7 @@ export default function ConversationView({
               control when an empty session receives a new greeting. */}
           <div
             key={greetingMsg.id}
+            data-nosnippet=""
             className="animate-blur-fade-in flex w-full flex-col items-center gap-3"
           >
             <p

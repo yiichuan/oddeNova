@@ -729,6 +729,7 @@ export default function CodePanel({
 
         <div
           ref={containerRef}
+          data-nosnippet=""
           data-testid="code-panel-editor-root"
           data-onboarding-target="code"
           className={`code-editor-fade-top flex-1 min-h-0 flex flex-col justify-stretch items-stretch overflow-hidden *:h-full${

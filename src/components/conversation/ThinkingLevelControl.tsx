@@ -296,6 +296,7 @@ export default function ThinkingLevelControl({
   return (
     <div
       ref={rootRef}
+      data-nosnippet=""
       className="relative"
       // Parent-child contract with ChatInput's card click: everything inside
       // this subtree (trigger, slider, heading, popover padding) is outside

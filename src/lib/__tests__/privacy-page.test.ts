@@ -42,7 +42,7 @@ describe('privacy policy page', () => {
     expect(source).not.toMatch(/<script/i);
     expect(source).not.toContain('src/main.tsx');
     expect(source).not.toContain('posthog');
-    expect(source).toContain('https://oddenova.com/privacy');
+    expect(source).toContain('<link rel="canonical" href="https://www.oddenova.com/privacy" />');
     expect(source).toContain('id="privacy-zh"');
     expect(source).toContain('id="privacy-en"');
     // Both language blocks carry the full section list, numbered alike, and
