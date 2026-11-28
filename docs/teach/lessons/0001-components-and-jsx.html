@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第一课 — 组件与 JSX</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第一课：组件与 JSX <span class="tag">入门</span></h1>
+
+<p style="color:var(--muted);font-family:var(--sans);font-size:0.9rem">
+  系列：React 基础 &middot;
+  <a href="../reference/react-glossary.html">术语表</a> &middot;
+  预计用时：10 分钟
+</p>
+
+<h2>1. 你将学到什么</h2>
+
+<p>React <strong>组件</strong>是一个返回 UI 的函数。这就是全部核心思想。你编写描述屏幕上应该显示什么的函数，React 负责把它放上去，并在数据变化时保持更新。</p>
+
+<p>本课你将学到：</p>
+<ul>
+  <li>JSX 是什么，它与 JavaScript 的关系</li>
+  <li>如何编写组件并渲染它</li>
+  <li>Props 如何让父组件向子组件传递数据</li>
+  <li>如何在 oddeNova 代码库中识别这些模式</li>
+</ul>
+
+<h2>2. JSX：JavaScript 中的 HTML</h2>
+
+<p>JSX 是一种语法扩展，让你直接在 JavaScript 中书写看起来像 HTML 的标记。它不是模板语言——它<em>编译为</em>普通的 JavaScript 函数调用。</p>
+
+<pre><code>// 这段 JSX：
+const element = &lt;h1&gt;Hello, world&lt;/h1&gt;
+
+// 编译为：
+const element = React.createElement('h1', null, 'Hello, world')
+
+// 结果是一个普通对象：
+// { type: 'h1', props: { children: 'Hello, world' } }</code></pre>
+
+<p>关键洞察：<strong>每个 JSX 元素都是一个 JavaScript 表达式</strong>。你可以把它赋值给变量、作为参数传递、从函数返回、存进数组——因为它本质上就是一个对象。</p>
+
+<div class="callout">
+  <strong>为什么这很重要：</strong>在 React 中，你的 UI <em>就是</em> JavaScript。没有单独的模板文件，没有需要学习的特殊模板语言。如果你懂 JavaScript，你就知道如何操作 UI。
+</div>
+
+<h2>3. 编写组件</h2>
+
+<p>组件就是一个返回 JSX 的函数。按照约定，组件名以大写字母开头——这是 React 区分组件与 HTML 标签的方式。</p>
+
+<pre><code>// 一个简单的组件
+function Greeting({ name }) {
+  return &lt;h1&gt;Hello, {name}!&lt;/h1&gt;
+}
+
+// 使用时看起来像 HTML 标签：
+function App() {
+  return &lt;Greeting name="Ada" /&gt;
+}</code></pre>
+
+<p>当 React 看到 <code>&lt;Greeting name="Ada" /&gt;</code> 时，它会调用 <code>Greeting</code> 函数，传入 <code>{ name: "Ada" }</code> 作为参数。函数返回 JSX，React 将其渲染到 DOM 中。</p>
+
+<h3>Props：数据如何向下流动</h3>
+
+<p>函数参数中的 <code>{ name }</code> 是<strong>解构的 props</strong>。Props 是父组件传递给子组件的输入。它们是只读的——组件接收 props 并使用它们，但绝不修改它们。</p>
+
+<pre><code>// Props 就是传给你函数的一个对象
+function Button({ label, onClick, disabled }) {
+  return (
+    &lt;button onClick={onClick} disabled={disabled}&gt;
+      {label}
+    &lt;/button&gt;
+  )
+}
+
+// 父组件决定传什么：
+function Toolbar() {
+  return &lt;Button label="Save" onClick={() =&gt; save()} disabled={false} /&gt;
+}</code></pre>
+
+<div class="callout">
+  <strong>数据向下流动：</strong>Props 总是从父到子。如果两个兄弟组件需要同一份数据，你把它"上提"到它们的共同父组件。我们会在后续课程中讲这个。
+</div>
+
+<h2>4. 需要记住的 JSX 规则</h2>
+
+<ol>
+  <li>
+    <strong>返回单个根元素。</strong>如果需要多个兄弟节点，用 Fragment 包裹：<code>&lt;&gt;...&lt;/&gt;</code>
+    <pre><code>// 错误——两个根：
+return &lt;h1&gt;Hi&lt;/h1&gt; &lt;p&gt;...&lt;/p&gt;
+
+// 正确——一个根：
+return (
+  &lt;&gt;
+    &lt;h1&gt;Hi&lt;/h1&gt;
+    &lt;p&gt;...&lt;/p&gt;
+  &lt;/&gt;
+)</code></pre>
+  </li>
+  <li>
+    <strong>每个标签都要闭合。</strong><code>&lt;img /&gt;</code>、<code>&lt;br /&gt;</code> 以及像 <code>&lt;Button /&gt;</code> 这样的组件必须自闭合。
+  </li>
+  <li>
+    <strong>用 <code>className</code>，不用 <code>class</code>。</strong>因为 JSX 是 JavaScript，<code>class</code> 是保留字。<code>className</code> 映射到 HTML 的 <code>class</code> 属性。
+  </li>
+  <li>
+    <strong>花括号切换到 JavaScript 模式。</strong>在 JSX 内部，<code>{ }</code> 让你嵌入任何 JavaScript 表达式。<code>{count + 1}</code>、<code>{user.name}</code>、<code>{items.map(...)}</code>——都合法。
+  </li>
+</ol>
+
+<h2>5. 从 oddeNova 看真实代码</h2>
+
+<p>让我们看看这些概念如何出现在实际代码库中。在 oddeNova 中，<code>src/App.tsx</code> 是根组件。它接收用户的聊天输入并编排 agent 循环。像 <code>ChatInput</code> 这样的组件接收 props 并通过回调函数上报——正是上面的模式。</p>
+
+<p>以下是你会在代码库中看到的简化版本：</p>
+
+<pre><code>// 简化自 oddeNova 的结构
+function ChatInput({ onSend, disabled }: ChatInputProps) {
+  return (
+    &lt;form onSubmit={(e) =&gt; {
+      e.preventDefault()
+      onSend()
+    }}&gt;
+      &lt;input type="text" disabled={disabled} /&gt;
+      &lt;button type="submit" disabled={disabled}&gt;Send&lt;/button&gt;
+    &lt;/form&gt;
+  )
+}
+
+// App 把回调函数传下去：
+function App() {
+  const handleSend = () =&gt; { /* 运行 agent 循环 */ }
+  return &lt;ChatInput onSend={handleSend} disabled={false} /&gt;
+}</code></pre>
+
+<p>注意：<code>ChatInput</code> 不知道发送时<em>会发生什么</em>——它只调用 <code>onSend()</code>。父组件（<code>App</code>）来决定。这种分离是 React 可组合性的核心。</p>
+
+<h2>6. 检查你的理解</h2>
+
+<div class="quiz" data-quiz>
+  <h4>测验：组件与 JSX</h4>
+
+  <div class="quiz-question">
+    <p>React 组件最终返回什么？</p>
+    <label><input type="radio" name="q1" value="wrong"> 一个 DOM 节点</label>
+    <label><input type="radio" name="q1" value="correct"> 一个 JSX 元素（普通对象）</label>
+    <label><input type="radio" name="q1" value="wrong"> 一个 HTML 字符串</label>
+  </div>
+  <div class="quiz-feedback" data-correct="correct">
+    正确！组件返回一个 JSX 元素，它是一个描述屏幕上应显示内容的普通 JavaScript 对象。React 随后将其转化为 DOM 节点。
+  </div>
+
+  <div class="quiz-question" style="margin-top:1.5rem">
+    <p>为什么组件名必须以大写字母开头？</p>
+    <label><input type="radio" name="q2" value="wrong"> 这是 JavaScript 语言的要求</label>
+    <label><input type="radio" name="q2" value="wrong"> 能提升性能</label>
+    <label><input type="radio" name="q2" value="correct"> 这样 React 才能区分组件和 HTML 标签</label>
+  </div>
+  <div class="quiz-feedback" data-correct="correct">
+    正确！小写标签如 <code>&lt;div&gt;</code> 被视为 HTML 元素。大写标签如 <code>&lt;Greeting&gt;</code> 被视为组件引用。没有这个约定，React 无法区分两者。
+  </div>
+
+  <div class="quiz-question" style="margin-top:1.5rem">
+    <p>组件能修改自己的 props 吗？</p>
+    <label><input type="radio" name="q3" value="wrong"> 可以，任何时候</label>
+    <label><input type="radio" name="q3" value="wrong"> 可以，但只能在 useEffect 中</label>
+    <label><input type="radio" name="q3" value="correct"> 不能，props 是只读的</label>
+  </div>
+  <div class="quiz-feedback" data-correct="correct">
+    正确。Props 在设计上是只读的。如果组件需要改变一个值，应该使用 state（下一课）。如果父组件需要知道变化，子组件通过回调 prop 来通知。
+  </div>
+</div>
+
+<h2>7. 下一步</h2>
+
+<p>你现在理解了 React 的原子：组件是返回 JSX 的函数，props 让父组件向子组件传递数据。下一课将讲<strong>state</strong>——让组件变得可交互并触发重新渲染的机制。</p>
+
+<div class="callout">
+  <strong>动手试试：</strong>打开 oddeNova 代码库中的 <code>src/App.tsx</code>。你能找出 <code>App</code> 向其子组件传递了哪些 props 吗？哪些组件接收了回调函数（作为 props 传入的函数）？
+</div>
+
+<div class="footer-note">
+  <strong>主要来源：</strong><a href="https://react.dev/learn/your-first-component">React 官方文档 — Your First Component</a><br>
+  <strong>推荐阅读：</strong><a href="https://react.dev/learn/writing-markup-with-jsx">React 官方文档 — Writing Markup with JSX</a><br>
+  <strong>有疑问？</strong>随时向 agent 提问——它是你的老师，可以帮你弄清这节课中的任何内容。
+</div>
+
+<div class="nav">
+  <span>&larr; 系列起点</span>
+  <a href="0002-state-and-renders.html">第二课：State 与重新渲染 &rarr;</a>
+</div>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

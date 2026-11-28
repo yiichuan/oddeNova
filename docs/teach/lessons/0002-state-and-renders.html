@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第二课 — State 与重新渲染</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>第二课：State 与重新渲染 <span class="tag">入门</span></h1>
+
+<p style="color:var(--muted);font-family:var(--sans);font-size:0.9rem">
+  系列：React 基础 &middot;
+  <a href="../reference/react-glossary.html">术语表</a> &middot;
+  预计用时：12 分钟
+</p>
+
+<h2>1. 你将学到什么</h2>
+
+<p>上一课我们学到：组件是返回 JSX 的函数，props 从父到子传递数据。但 props 是只读的——如果组件需要自己<em>管理</em>会变化的数据，就需要 <strong>state</strong>。</p>
+
+<p>本课你将学到：</p>
+<ul>
+  <li><code>useState</code> 如何工作：声明、读取、更新</li>
+  <li>更新 state 如何触发重新渲染</li>
+  <li>函数式更新与批处理</li>
+  <li>state 是"按组件位置"记忆的——为什么这很重要</li>
+</ul>
+
+<h2>2. useState：给组件添加记忆</h2>
+
+<p><code>useState</code> 是最基本的 hook。它让组件"记住"一个值，并在该值变化时触发重新渲染。</p>
+
+<pre><code>import { useState } from 'react'
+
+function Counter() {
+  // 声明一个 state 变量，初始值为 0
+  const [count, setCount] = useState(0)
+
+  return (
+    &lt;button onClick={() =&gt; setCount(count + 1)}&gt;
+      点击了 {count} 次
+    &lt;/button&gt;
+  )
+}</code></pre>
+
+<p>解构这行代码：</p>
+<ul>
+  <li><code>useState(0)</code> — 调用 hook，传入初始值 <code>0</code></li>
+  <li><code>count</code> — 当前值（本次渲染中的快照）</li>
+  <li><code>setCount</code> — 更新函数，调用它会触发重新渲染</li>
+</ul>
+
+<div class="callout">
+  <strong>关键心智模型：</strong><code>count</code> 不是"变量"——它是本次渲染的快照。每次调用 <code>setCount</code>，React 会用新值安排一次重新渲染，整个组件函数从头重新执行，<code>count</code> 获得新值。
+</div>
+
+<h2>3. 更新 State 的正确方式</h2>
+
+<h3>直接更新 vs 函数式更新</h3>
+
+<p>当你需要基于<em>当前值</em>计算下一个值时，有两种写法：</p>
+
+<pre><code>// 方式一：直接传入新值
+setCount(count + 1)
+
+// 方式二：传入一个函数（函数式更新）
+setCount(prev =&gt; prev + 1)</code></pre>
+
+<p>区别在于"批处理"场景。React 为了性能，会把同一次事件中的多次 state 更新合并为一次重新渲染：</p>
+
+<pre><code>function handleTripleClick() {
+  setCount(count + 1)  // 用的是本次渲染的 count
+  setCount(count + 1)  // 还是同一个 count！
+  setCount(count + 1)  // 同上
+  // 结果：count 只增加了 1，而不是 3
+}
+
+function handleTripleClickFixed() {
+  setCount(prev =&gt; prev + 1)  // prev 是最新的值
+  setCount(prev =&gt; prev + 1)
+  setCount(prev =&gt; prev + 1)
+  // 结果：count 增加了 3
+}</code></pre>
+
+<div class="callout">
+  <strong>规则：</strong>如果新 state 依赖前一个 state，总是用函数式更新 <code>setX(prev =&gt; ...)</code>。
+</div>
+
+<h3>对象的更新</h3>
+
+<p>State 不会自动合并——你必须用展开语法（spread）手动保留其他字段：</p>
+
+<pre><code>const [form, setForm] = useState({ name: '', email: '' })
+
+// 错误：丢失了 email
+setForm({ name: 'Ada' })
+
+// 正确：保留 email
+setForm(prev =&gt; ({ ...prev, name: 'Ada' }))</code></pre>
+
+<h2>4. 渲染周期：State 变化 → 重新渲染</h2>
+
+<p>当调用 <code>setCount</code> 时，React 做以下事情：</p>
+
+<ol>
+  <li>将新值排入更新队列</li>
+  <li>安排一次重新渲染（可能批处理多次更新）</li>
+  <li>重新调用组件函数，拿到新的 JSX</li>
+  <li>将新 JSX 与旧 JSX 比较（协调过程）</li>
+  <li>只把有差异的部分提交到真实 DOM</li>
+</ol>
+
+<pre><code>// 第 1 次渲染：count = 0
+//   JSX: &lt;button&gt;点击了 0 次&lt;/button&gt;
+
+// 用户点击 → setCount(1)
+
+// 第 2 次渲染：count = 1
+//   JSX: &lt;button&gt;点击了 1 次&lt;/button&gt;
+
+// React 比较两棵树，发现文本内容变了
+// 只更新 DOM 中的文本节点，按钮元素本身不变</code></pre>
+
+<div class="callout">
+  <strong>渲染 ≠ DOM 操作：</strong>每次重新渲染都会调用组件函数，但 React 不一定会操作 DOM。如果 JSX 没变化，DOM 就不动。这就是虚拟 DOM 的价值——最小化真实的 DOM 操作。
+</div>
+
+<h2>5. 从 oddeNova 看真实代码</h2>
+
+<p>oddeNova 的 <code>App.tsx</code> 中有大量 state 声明。看几个真实的例子：</p>
+
+<pre><code>// src/App.tsx（简化）
+const [demoStep, setDemoStep] = useState(0)
+const [isMoodLoading, setIsMoodLoading] = useState(false)
+const [rollbackPrefill, setRollbackPrefill] = useState('')
+const [showApiKeyModal, setShowApiKeyModal] = useState(() =&gt; {
+  try { if (window.self !== window.top) return false } catch { return false }
+  return !hasApiKeyConfigured()
+})</code></pre>
+
+<p>注意最后一个——初始值不是简单字面量，而是一个函数。这叫<strong>惰性初始化</strong>：</p>
+
+<pre><code>// 普通初始化：每次渲染都会计算初始值（即使只在首次用到）
+const [val, setVal] = useState(expensiveComputation())
+
+// 惰性初始化：只在首次渲染时执行函数
+const [val, setVal] = useState(() =&gt; expensiveComputation())</code></pre>
+
+<p>oddeNova 用惰性初始化来检测是否在 iframe 中、是否已配置 API key——这些检查只需要做一次。</p>
+
+<h3>更简洁的例子：useIsMobile</h3>
+
+<p><code>src/hooks/useIsMobile.ts</code> 是一个完美的小例子，展示了 state + effect 的基本模式：</p>
+
+<pre><code>// src/hooks/useIsMobile.ts
+export function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(
+    () =&gt; window.matchMedia('(max-width: 768px)').matches
+  )
+
+  // 惰性初始化：首次渲染时检测一次窗口大小
+  // 后续变化交给 effect 监听
+
+  return isMobile
+}</code></pre>
+
+<p>这里 <code>isMobile</code> 是布尔 state，初始值通过惰性初始化从 <code>matchMedia</code> 获取。组件使用 <code>useIsMobile()</code> 就能在窗口大小跨越断点时自动重新渲染。（effect 部分下一课讲。）</p>
+
+<h2>6. State 是按位置记忆的</h2>
+
+<p>React 通过组件在树中的<strong>位置</strong>来关联 state，而不是通过组件名。这意味着：</p>
+
+<pre><code>// 两个 Counter 是独立的，各自有自己的 count
+function App() {
+  return (
+    &lt;&gt;
+      &lt;Counter /&gt;   {/* 位置 1：count = A */}
+      &lt;Counter /&gt;   {/* 位置 2：count = B */}
+    &lt;/&gt;
+  )
+}</code></pre>
+
+<p>对于列表中的组件，React 用 <code>key</code> prop 来区分：</p>
+
+<pre><code>// 如果 items 顺序变了，key 帮助 React 追踪哪个是哪个
+{items.map(item =&gt; (
+  &lt;TodoItem key={item.id} item={item} /&gt;
+))}</code></pre>
+
+<div class="callout">
+  <strong>常见陷阱：</strong>用数组索引作为 key，当列表重排时 state 会"跟错"组件。始终用稳定唯一的 ID 作为 key。
+</div>
+
+<h2>7. 检查你的理解</h2>
+
+<div class="quiz" data-quiz>
+  <h4>测验：State 与重新渲染</h4>
+
+  <div class="quiz-question">
+    <p>调用 <code>setCount(count + 1)</code> 连续三次（同一事件处理函数中），count 最终增加多少？</p>
+    <label><input type="radio" name="q1" value="correct"> 1</label>
+    <label><input type="radio" name="q1" value="wrong"> 3</label>
+    <label><input type="radio" name="q1" value="wrong"> 0</label>
+  </div>
+  <div class="quiz-feedback" data-correct="correct">
+    正确！三次调用用的是同一个 <code>count</code>（本次渲染的快照），所以三次都计算为 <code>0 + 1 = 1</code>。React 批处理后只渲染一次，count 变为 1。要增加 3 次，需要用函数式更新：<code>setCount(prev =&gt; prev + 1)</code>。
+  </div>
+
+  <div class="quiz-question" style="margin-top:1.5rem">
+    <p><code>useState(() =&gt; initFunction())</code> 中的函数何时执行？</p>
+    <label><input type="radio" name="q2" value="wrong"> 每次渲染都执行</label>
+    <label><input type="radio" name="q2" value="correct"> 仅首次渲染时执行</label>
+    <label><input type="radio" name="q2" value="wrong"> 每次 state 变化时执行</label>
+  </div>
+  <div class="quiz-feedback" data-correct="correct">
+    正确！传入函数给 <code>useState</code> 是惰性初始化——React 只在首次渲染时调用该函数获取初始值，后续渲染直接忽略它。这避免了每次渲染都做不必要的计算。
+  </div>
+
+  <div class="quiz-question" style="margin-top:1.5rem">
+    <p>两个同名的 <code>&lt;Counter /&gt;</code> 组件并排放置，它们的 state 是共享的吗？</p>
+    <label><input type="radio" name="q3" value="wrong"> 是，因为组件名相同</label>
+    <label><input type="radio" name="q3" value="correct"> 否，各自独立</label>
+    <label><input type="radio" name="q3" value="wrong"> 否，但原因与 key 有关</label>
+  </div>
+  <div class="quiz-feedback" data-correct="correct">
+    正确！React 按位置而非名字关联 state。两个 <code>&lt;Counter /&gt;</code> 在不同位置，各有自己的 state。要共享 state，需要"状态上提"到共同父组件——后续课程会讲。
+  </div>
+</div>
+
+<h2>8. 下一步</h2>
+
+<p>你现在掌握了 React 的两个核心动力源：props（外部数据）和 state（内部数据）。下一课将讲 <code>useEffect</code>——组件如何与外部世界交互（订阅事件、获取数据、操作 DOM），以及依赖数组为什么是 React 中最容易出错的地方。</p>
+
+<div class="callout">
+  <strong>动手试试：</strong>打开 <code>src/App.tsx</code>，找到 <code>showApiKeyModal</code> 这个 state。想一想：谁会调用 <code>setShowApiKeyModal</code>？它的初始值用惰性初始化做了什么判断？为什么不能直接写 <code>useState(false)</code>？
+</div>
+
+<div class="footer-note">
+  <strong>主要来源：</strong><a href="https://react.dev/learn/state-a-components-memory">React 官方文档 — State: A Component's Memory</a><br>
+  <strong>推荐阅读：</strong><a href="https://react.dev/learn/render-and-commit">React 官方文档 — Render and Commit</a><br>
+  <strong>有疑问？</strong>随时向 agent 提问——它是你的老师，可以帮你弄清这节课中的任何内容。
+</div>
+
+<div class="nav">
+  <a href="0001-components-and-jsx.html">&larr; 第一课：组件与 JSX</a>
+  <a href="0003-useeffect-and-dependencies.html">第三课：useEffect 与依赖数组 &rarr;</a>
+</div>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

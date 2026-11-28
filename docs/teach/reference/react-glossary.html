@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>React 术语表</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<h1>React 术语表</h1>
+<p style="color:var(--muted);font-family:var(--sans);font-size:0.9rem">一份持续维护的参考文档。所有课程中术语用法与此保持一致。</p>
+
+<h2>1. 核心术语</h2>
+
+<h3>组件（Component）</h3>
+<p>可复用、自包含的 UI 片段。在现代 React 中，它是一个返回 JSX 的函数。组件是 React 应用的构建块——屏幕上的一切都是组件树。</p>
+
+<h3>JSX</h3>
+<p>一种语法扩展，让你在 JavaScript 中书写类 HTML 标记。JSX 中的 <code>&lt;div /&gt;</code> 会编译为 <code>React.createElement('div')</code>。每个 JSX 元素都是一个 JavaScript 表达式。</p>
+
+<h3>元素（Element）</h3>
+<p>React 应用中最小的构建块。元素是描述你想在屏幕上看到什么的普通对象：<code>{ type: 'button', props: { ... } }</code>。元素是不可变的——要更新它，你需要创建一个新元素。</p>
+
+<h3>Props</h3>
+<p>"properties" 的缩写。从父组件传递给子组件的只读输入。Props 是数据沿组件树向下流动的方式。组件绝不能修改自己的 props。</p>
+
+<h3>State</h3>
+<p>组件拥有的内部可变数据。当 state 变化时，React 会重新渲染该组件。State 是组件的"记忆"——让组件变得可交互而非静态。</p>
+
+<h3>渲染（Render）</h3>
+<p>调用组件函数以产生其 JSX 输出。React 渲染组件后，将变更"提交"到 DOM。渲染不等于 DOM 更新——React 可能在没有任何变化时不触碰 DOM。</p>
+
+<h3>重新渲染（Re-render）</h3>
+<p>由 state 变化、父组件重新渲染或 context 变化触发的后续渲染。重新渲染是 React 保持 UI 与数据同步的方式。</p>
+
+<h3>Hook</h3>
+<p>让你从函数组件中"钩入" React 特性（state、effects、refs、context）的函数。Hook 总是以 <code>use</code> 开头。</p>
+
+<h3>useEffect</h3>
+<p>用于将组件与外部系统同步的 hook：获取数据、订阅事件、操作 DOM、设置定时器。在渲染后执行。依赖数组控制它何时重新运行。</p>
+
+<h3>useRef</h3>
+<p>跨渲染持有可变值但不触发重新渲染的 hook。也用于直接访问 DOM 节点。当前值存储在 <code>ref.current</code> 中。</p>
+
+<h3>依赖数组（Dependency Array）</h3>
+<p><code>useEffect</code>、<code>useMemo</code> 和 <code>useCallback</code> 的第二个参数。它告诉 React 该 hook 依赖哪些值。空数组 <code>[]</code> 表示"只运行一次"。省略则表示"每次渲染都运行"。</p>
+
+<h3>闭包过期（Stale Closure）</h3>
+<p>一种 bug：函数或 effect 捕获了变量的旧值，因为它是在更早的渲染中创建的。通常通过将该变量加入依赖数组来修复。</p>
+
+<h3>虚拟 DOM（Virtual DOM）</h3>
+<p>UI 的内存表示。React 比较前后两棵虚拟 DOM 树（称为"协调"过程），以确定需要的最小 DOM 变更集。</p>
+
+<h3>协调（Reconciliation）</h3>
+<p>React 用于 diff 两棵元素树并决定真实 DOM 中需要更新什么的算法。这就是你能写声明式代码的原因——React 负责计算具体的 DOM 操作。</p>
+
+<h3>Key</h3>
+<p>一个特殊的 prop，帮助 React 识别列表中哪些项发生了变化、被添加或删除。Key 必须在兄弟节点中稳定且唯一。使用数组索引作为 key 在列表重排时可能导致隐蔽的 bug。</p>
+
+<h3>Context</h3>
+<p>一种无需 prop drilling 即可沿组件树传递数据的方式。用 <code>createContext()</code> 创建，用 <code>&lt;Context.Provider value={...}&gt;</code> 提供，用 <code>useContext()</code> 消费。</p>
+
+<h3>状态上提（Lifting State Up）</h3>
+<p>将 state 从子组件移到共同父组件，使多个子组件可以共享它。这是协调兄弟组件的标准模式。</p>
+
+<h3>受控组件（Controlled Component）</h3>
+<p>其值由 React state 控制的表单输入。组件是输入值的"唯一数据源"。</p>
+
+<h3>Children</h3>
+<p>组件开闭标签之间的内容。通过 <code>props.children</code> 访问。让你像组合 HTML 元素一样组合组件。</p>
+
+<h2>2. 模式</h2>
+
+<h3>Prop Drilling</h3>
+<p>将 props 穿过多层自身不使用它们的组件，只为了传递给深层嵌套的子组件。通常是 Context 可能适用的信号。</p>
+
+<h3>自定义 Hook（Custom Hook）</h3>
+<p>名称以 <code>use</code> 开头的函数，封装一个或多个内置 hook 以复用逻辑。例如：oddeNova 中的 <code>useSessions()</code> 封装了 IndexedDB 访问。</p>
+
+<div class="nav">
+<a href="../lessons/0001-components-and-jsx.html">&larr; 第一课：组件与 JSX</a>
+</div>
+
+</body>
+</html>
