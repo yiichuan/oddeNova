@@ -71,6 +71,8 @@ function renderCodePanel(props: Partial<Parameters<typeof CodePanel>[0]> = {}) {
     onMount: vi.fn(),
     onPlay: vi.fn(),
     onPause: vi.fn(),
+    playbackMode: 'loop',
+    onTogglePlaybackMode: vi.fn(),
     onUpdate: vi.fn(),
   };
 
@@ -249,7 +251,7 @@ describe('CodePanel editor focus reporting', () => {
       `button[aria-label="${t('play')}"]`,
     );
 
-    expect(controlsLayer?.querySelectorAll('button')).toHaveLength(5);
+    expect(controlsLayer?.querySelectorAll('button')).toHaveLength(6);
     expect(playButton?.classList.contains('control-button-surface')).toBe(true);
     expect(playButton?.classList.contains('cursor-pointer')).toBe(true);
     expect(playButton?.classList.contains('hover:text-control-icon-hover')).toBe(true);
@@ -315,6 +317,111 @@ describe('CodePanel editor focus reporting', () => {
     expect(onPause).toHaveBeenCalledOnce();
   });
 
+  it.each([false, true])('keeps the play button and glyphs stable while starting (mobile=%s)', (mobile) => {
+    installMatchMedia(mobile);
+    const onPlay = vi.fn();
+    const { container, root, rerender } = renderCodePanel({ onPlay });
+    roots.push(root);
+
+    const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('play')}"]`)!;
+    const playIcon = button.querySelector('.lucide-play')!;
+    const pauseIcon = button.querySelector('.lucide-pause')!;
+    act(() => button.focus());
+
+    rerender({ isStarting: true });
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(document.activeElement).toBe(button);
+    expect(playIcon.classList.contains('code-panel-play-glyph-loading')).toBe(true);
+    expect(button.querySelector('.code-panel-play-spinner')).not.toBeNull();
+    act(() => button.click());
+    expect(onPlay).not.toHaveBeenCalled();
+
+    rerender({ isStarting: false, isPlaying: true });
+    expect(button.getAttribute('aria-label')).toBe(t('pause'));
+    expect(button.querySelector('.lucide-play')).toBe(playIcon);
+    expect(button.querySelector('.lucide-pause')).toBe(pauseIcon);
+    expect(playIcon.classList.contains('opacity-0')).toBe(true);
+    expect(pauseIcon.classList.contains('opacity-0')).toBe(false);
+    expect(button.querySelector('.code-panel-play-spinner')).toBeNull();
+  });
+
+  it.each([false, true])('switches playback mode and only releases pointer focus (mobile=%s)', (mobile) => {
+    installMatchMedia(mobile);
+    const onTogglePlaybackMode = vi.fn();
+    const { container, root, rerender } = renderCodePanel({ onTogglePlaybackMode });
+    roots.push(root);
+
+    const modeButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('playbackLoop')}"]`)!;
+    expect(modeButton.querySelector('.lucide-repeat')).not.toBeNull();
+    act(() => {
+      modeButton.focus();
+      modeButton.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    expect(onTogglePlaybackMode).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(document.body);
+
+    rerender({ playbackMode: 'once' });
+    expect(modeButton.getAttribute('aria-label')).toBe(t('playbackOnce'));
+    expect(modeButton.querySelector('.lucide-arrow-right-to-line')).not.toBeNull();
+
+    act(() => {
+      modeButton.focus();
+      modeButton.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+    });
+    expect(onTogglePlaybackMode).toHaveBeenCalledTimes(2);
+    expect(document.activeElement).toBe(modeButton);
+  });
+
+  it.each([false, true])('uses the shared transport tooltips (mobile=%s)', (mobile) => {
+    vi.useFakeTimers();
+    installMatchMedia(mobile);
+    const { container, root, rerender } = renderCodePanel();
+    roots.push(root);
+
+    const play = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('play')}"]`)!;
+    const mode = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('playbackLoop')}"]`)!;
+    const enter = (button: HTMLButtonElement) => act(() => {
+      button.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' }));
+    });
+    const leave = (button: HTMLButtonElement) => act(() => {
+      button.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: document.body }));
+    });
+    const tooltip = () => document.querySelector('[role="tooltip"].primary-nav-tooltip');
+
+    enter(play);
+    act(() => { vi.advanceTimersByTime(999); });
+    expect(tooltip()).toBeNull();
+    leave(play);
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(tooltip()).toBeNull();
+
+    enter(play);
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(tooltip()?.querySelector('span > span')?.textContent).toBe(t('play'));
+    expect(tooltip()?.querySelector('kbd')?.textContent).toBe(t('spaceKey'));
+    expect(play.getAttribute('aria-keyshortcuts')).toBe('Space');
+
+    rerender({ isStarting: true });
+    expect(play.getAttribute('aria-busy')).toBe('true');
+    expect(tooltip()?.querySelector('span > span')?.textContent).toBe(t('play'));
+    expect(tooltip()?.querySelector('kbd')?.textContent).toBe(t('spaceKey'));
+
+    rerender({ isStarting: false, isPlaying: true });
+    expect(tooltip()?.querySelector('span > span')?.textContent).toBe(t('pause'));
+    expect(tooltip()?.querySelector('kbd')?.textContent).toBe(t('spaceKey'));
+    leave(play);
+    expect(tooltip()).toBeNull();
+
+    enter(mode);
+    expect(tooltip()?.textContent).toBe(t('playbackLoop'));
+    expect(tooltip()?.querySelector('kbd')).toBeNull();
+    expect(mode.hasAttribute('title')).toBe(false);
+    rerender({ playbackMode: 'once' });
+    expect(tooltip()?.textContent).toBe(t('playbackOnce'));
+  });
+
   it('offers update after play, only while an edit is outrunning the sound', () => {
     installMatchMedia(false);
     const onUpdate = vi.fn();
@@ -336,7 +443,7 @@ describe('CodePanel editor focus reporting', () => {
     const transport = container.querySelector('[data-testid="code-panel-play-control"]');
     const labels = [...(transport?.querySelectorAll('button') ?? [])]
       .map((button) => button.getAttribute('aria-label'));
-    expect(labels).toEqual([t('pause'), t('updatePattern')]);
+    expect(labels).toEqual([t('pause'), t('playbackLoop'), t('updatePattern')]);
 
     const updateButton = container.querySelector<HTMLButtonElement>(updateSelector);
     expect(updateButton?.disabled).toBe(false);

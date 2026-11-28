@@ -507,7 +507,7 @@ describe('StrudelService editor replacement', () => {
     static built: FakeMirror[] = [];
     onUpdateState: (state: unknown) => void;
     code: string;
-    scheduler = { started: false };
+    scheduler = { started: false, pause: () => this.report(false) };
     repl: { setCode: () => void; stop: () => void; scheduler: { started: boolean } };
     drawer = { stop: vi.fn() };
     editor = { dispatch: vi.fn(), destroy: vi.fn() };
@@ -600,6 +600,18 @@ describe('StrudelService editor replacement', () => {
     expect(playing.at(-1)).toBe(true);
   });
 
+  it('reports a scheduler pause without passing through a stopped state', async () => {
+    const { service } = await attachTwice();
+    await service.play();
+
+    const states: { isPlaying: boolean; isPaused: boolean }[] = [];
+    service.onStateChange(({ isPlaying, isPaused }) => states.push({ isPlaying, isPaused }));
+    service.pause();
+
+    expect(states.at(-1)).toEqual({ isPlaying: false, isPaused: true });
+    expect(states).not.toContainEqual({ isPlaying: false, isPaused: false });
+  });
+
   it('ignores a superseded editor that reports anyway', async () => {
     const { service, playing, outgoing } = await attachTwice();
     await service.play();
@@ -617,6 +629,8 @@ describe('StrudelService editor replacement', () => {
    play. A successful evaluate now ends by asserting what the scheduler says. */
 describe('StrudelService transport truth', () => {
   afterEach(() => {
+    window.localStorage.removeItem('vibe_playback_mode');
+    vi.useRealTimers();
     vi.resetModules();
     vi.doUnmock('../../lib/soundfont-loader');
     vi.doUnmock('../../lib/analytics');
@@ -631,18 +645,21 @@ describe('StrudelService transport truth', () => {
       _isVideoMode: boolean;
       editorInstance: {
         evaluate: () => Promise<void>;
-        repl: { stop: () => void; scheduler: { started: boolean } };
+        setCode: (code: string) => void;
+        repl: { stop: () => void; scheduler: { started: boolean; now: () => number } };
       };
     };
     mutable._isVideoMode = true;
+    const now = vi.fn(() => 0);
     // Already running, and saying nothing about it.
     mutable.editorInstance = {
       evaluate: vi.fn(async () => {}),
-      repl: { stop: vi.fn(), scheduler: { started: true } },
+      setCode: vi.fn(),
+      repl: { stop: vi.fn(), scheduler: { started: true, now } },
     };
     const states: { isPlaying: boolean; isPaused: boolean }[] = [];
     service.onStateChange(({ isPlaying, isPaused }) => states.push({ isPlaying, isPaused }));
-    return { service, states };
+    return { service, states, now, stop: mutable.editorInstance.repl.stop };
   }
 
   it('reports the transport the scheduler is actually running after a play', async () => {
@@ -652,6 +669,54 @@ describe('StrudelService transport truth', () => {
     await service.play();
 
     expect(states.at(-1)).toEqual({ isPlaying: true, isPaused: false });
+  });
+
+  it('restores the last playback mode when the service is recreated', async () => {
+    const { service } = await serviceOnRunningScheduler();
+    const { StrudelService } = await import('../strudel');
+
+    expect(service.playbackMode).toBe('loop');
+    service.togglePlaybackMode();
+
+    const reopened = new StrudelService();
+    expect(reopened.playbackMode).toBe('once');
+    reopened.togglePlaybackMode();
+
+    expect(new StrudelService().playbackMode).toBe('loop');
+  });
+
+  it('stops at the end of one pass and keeps playing in loop mode', async () => {
+    vi.useFakeTimers();
+    const { service, states, now, stop } = await serviceOnRunningScheduler();
+    service.setCode('s("<bd sd>")');
+
+    await service.play();
+    now.mockReturnValue(2.25);
+    vi.advanceTimersByTime(100);
+    expect(stop).not.toHaveBeenCalled();
+
+    service.togglePlaybackMode();
+    now.mockReturnValue(3.99);
+    vi.advanceTimersByTime(100);
+    expect(stop).not.toHaveBeenCalled();
+
+    now.mockReturnValue(4);
+    vi.advanceTimersByTime(100);
+    expect(stop).toHaveBeenCalledOnce();
+    expect(states.at(-1)).toEqual({ isPlaying: false, isPaused: false });
+  });
+
+  it('cancels the one-pass stop when returning to loop mode', async () => {
+    vi.useFakeTimers();
+    const { service, now, stop } = await serviceOnRunningScheduler();
+    service.setCode('s("<bd sd>")');
+    service.togglePlaybackMode();
+
+    await service.play();
+    service.togglePlaybackMode();
+    now.mockReturnValue(2);
+    vi.advanceTimersByTime(100);
+    expect(stop).not.toHaveBeenCalled();
   });
 });
 
@@ -734,6 +799,27 @@ describe('StrudelService opening load', () => {
     await playing;
 
     expect(evaluate).toHaveBeenCalledTimes(1);
+    expect(state.isStarting).toBe(false);
+  });
+
+  it('keeps the play key busy between preloading and starting the transport', async () => {
+    const { service, state, releases, superdough, evaluate } = await setUp([{ s: 'bd' }]);
+    let finishEvaluation!: () => void;
+    const evaluation = new Promise<void>((resolve) => { finishEvaluation = resolve; });
+    const startTransport = evaluate.getMockImplementation()!;
+    evaluate.mockImplementationOnce(async () => {
+      await evaluation;
+      await startTransport();
+    });
+
+    const playing = service.play();
+    await vi.waitFor(() => expect(superdough).toHaveBeenCalledOnce());
+    releases.forEach((release) => release());
+    await vi.waitFor(() => expect(evaluate).toHaveBeenCalledOnce());
+    expect(state.isStarting).toBe(true);
+
+    finishEvaluation();
+    await playing;
     expect(state.isStarting).toBe(false);
   });
 

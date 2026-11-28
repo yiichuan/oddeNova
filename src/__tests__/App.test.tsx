@@ -19,12 +19,15 @@ const mocks = vi.hoisted(() => ({
   strudel: {
     code: '',
     play: vi.fn(async () => true),
+    pause: vi.fn(),
     stop: vi.fn(),
     setCode: vi.fn(),
     getDisplayedCode: vi.fn(() => ''),
     setReadOnly: vi.fn(),
     setRoot: vi.fn(),
     isPlaying: false,
+    playbackMode: 'loop',
+    togglePlaybackMode: vi.fn(),
     engineReady: true,
     engineStatus: 'ready',
     error: '',
@@ -747,6 +750,7 @@ describe('App session sync boundaries', () => {
     mocks.cloudLibrary.refreshSearches.mockReset();
     mocks.getAllSessions.mockResolvedValue([]);
     mocks.strudel.code = 's("bd")';
+    mocks.strudel.isPlaying = false;
     mocks.session.code = 's("bd")';
     mocks.session.messages = [];
     mocks.session.updatedAt = 1;
@@ -794,6 +798,50 @@ describe('App session sync boundaries', () => {
       await Promise.resolve();
     });
   }
+
+  async function pressSpace(target: HTMLElement, options: KeyboardEventInit = {}) {
+    const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true, ...options });
+    await act(async () => { target.dispatchEvent(event); });
+    return event;
+  }
+
+  it('plays from the studio with Space and pauses on the next press', async () => {
+    mocks.isMobile = false;
+    await renderApp();
+    mocks.sessions.setManualCode.mockClear();
+
+    const playEvent = await pressSpace(document.body);
+    expect(playEvent.defaultPrevented).toBe(true);
+    expect(mocks.sessions.setManualCode).toHaveBeenCalledWith('s("bd")', 's-1');
+    expect(mocks.strudel.play).toHaveBeenCalledOnce();
+
+    mocks.strudel.isPlaying = true;
+    await renderApp();
+    await pressSpace(document.body, { repeat: true });
+    expect(mocks.strudel.pause).not.toHaveBeenCalled();
+
+    const pauseEvent = await pressSpace(document.body);
+    expect(pauseEvent.defaultPrevented).toBe(true);
+    expect(mocks.strudel.pause).toHaveBeenCalledOnce();
+  });
+
+  it('leaves Space available to typing, focused controls, and composition', async () => {
+    mocks.isMobile = false;
+    await renderApp();
+    const input = document.createElement('textarea');
+    const editor = document.createElement('div');
+    editor.setAttribute('contenteditable', 'true');
+    const button = document.createElement('button');
+    container.append(input, editor, button);
+
+    for (const target of [input, editor, button]) {
+      target.focus();
+      expect((await pressSpace(target)).defaultPrevented).toBe(false);
+    }
+    expect((await pressSpace(document.body, { isComposing: true })).defaultPrevented).toBe(false);
+    expect(mocks.strudel.play).not.toHaveBeenCalled();
+    expect(mocks.strudel.pause).not.toHaveBeenCalled();
+  });
 
   /* The favorites workspace is a lazy chunk: once its gate opens, the page
      arrives on a later task. Waiting for its own root keeps the real loading

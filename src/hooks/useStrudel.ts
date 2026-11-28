@@ -11,6 +11,7 @@ const unavailablePlayback = new PlaybackTelemetry();
 
 export function useStrudel() {
   const [state, setState] = useState<StrudelState>(() => ({
+    playbackMode: strudelService.playbackMode,
     code: '',
     activeCode: '',
     isPlaying: false,
@@ -173,6 +174,8 @@ export function useStrudel() {
     currentCode: state.code,
     activeCode: state.activeCode,
     isPlaying: state.isPlaying,
+    playbackMode: state.playbackMode,
+    togglePlaybackMode: strudelService.togglePlaybackMode,
     isPaused: state.isPaused,
     isStarting: state.isStarting,
     engineReady: state.engineReady,

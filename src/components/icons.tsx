@@ -29,6 +29,8 @@ import {
   Moon,
   SquareTerminal,
   RefreshCw,
+  Repeat,
+  ArrowRightToLine,
   Split,
   SquareArrowOutUpRight,
   Star,
@@ -168,6 +170,8 @@ export const SunIcon = ({ size = 16, className }: IconProps) => <Sun size={size}
 export const MoonIcon = ({ size = 16, className }: IconProps) => <Moon size={size} className={className} />;
 export const RetryIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;
 // Strudel's own "update" glyph: re-evaluate the running pattern in place.
+export const LoopPlaybackIcon = ({ size = 16, className }: IconProps) => <Repeat size={size} className={className} />;
+export const SinglePlaybackIcon = ({ size = 16, className }: IconProps) => <ArrowRightToLine size={size} className={className} />;
 export const UpdateIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;
 export const GitBranchIcon = ({ size = 16, className }: IconProps) => <Split size={size} className={className} />;
 export const OpenInStudioIcon = ({ size = 16, className }: IconProps) => (

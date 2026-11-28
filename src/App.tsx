@@ -1,7 +1,7 @@
 import { analyticsContext, analyticsMessageTurn, setAnalyticsWorkspace } from './lib/analytics-context';
 import { emitTelemetry } from './lib/telemetry';
 import { ownImage, type ImageAttachment } from './lib/image-attachments';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { DRAFT_SEGMENT_ID, codeBeforeMessage } from './lib/draft-diff';
@@ -1093,22 +1093,6 @@ export default function App() {
     isMobile,
   ]);
 
-  // Option+. (Alt+.) global play/stop toggle — matches strudel's Alt+. keybinding
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.altKey && e.code === 'Period' && e.key !== '.') {
-        e.preventDefault();
-        if (strudelRef.current.isPlaying) {
-          strudelRef.current.pause();
-        } else if (strudelRef.current.engineReady) {
-          void strudelRef.current.play();
-        }
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
-
   // Build the agent progress→UI handler for a given session. Shared verbatim by
   // handleInstruction and handleMoodInstruction.
   const makeAgentProgressHandler = useCallback(
@@ -2019,6 +2003,45 @@ export default function App() {
     return () => document.documentElement.removeAttribute('data-guide-active');
   }, [guideOnStep]);
 
+  const spacePlayPending = useRef(false);
+  const handlePlaybackShortcut = useEffectEvent((event: KeyboardEvent) => {
+    // Option + period mirrors Strudel's Alt + period binding.
+    if (event.altKey && event.code === 'Period' && event.key !== '.') {
+      event.preventDefault();
+      if (strudel.isPlaying) strudel.pause();
+      else if (strudel.engineReady) void strudel.play();
+      return;
+    }
+
+    if (event.key !== ' ' || event.defaultPrevented || event.isComposing ||
+      event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (!guideStudioActive || guideOnStep || navDrawerOpen || isVideoMode || auth.recoveringPassword) return;
+
+    const target = event.target;
+    if (target instanceof Element && target.closest(
+      'input, textarea, select, button, summary, a[href], [contenteditable]:not([contenteditable="false"]), ' +
+      '[role="textbox"], [role="button"], [role="checkbox"], [role="slider"], [role="switch"], ' +
+      '[role="menuitem"], [role="tab"], [role="option"]',
+    )) return;
+
+    if (!strudel.isPlaying && (!strudel.engineReady || strudel.isStarting || !strudel.code.trim())) return;
+    event.preventDefault();
+    if (event.repeat) return;
+
+    if (strudel.isPlaying) {
+      strudel.pause();
+    } else if (!spacePlayPending.current) {
+      spacePlayPending.current = true;
+      void handlePlay().finally(() => { spacePlayPending.current = false; });
+    }
+  });
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => handlePlaybackShortcut(event);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const creationPhoneStep = isMobile && firstCreation.view === 'step' ? firstCreation.step : null;
   const creationCodeOpened = firstCreation.codeOpened;
   useEffect(() => {
@@ -2773,6 +2796,8 @@ export default function App() {
                 onMount={strudel.setRoot}
                 onPlay={handlePlay}
                 onPause={strudel.pause}
+                playbackMode={strudel.playbackMode}
+                onTogglePlaybackMode={strudel.togglePlaybackMode}
                 isDirty={strudel.isDirty}
                 activeCode={strudel.activeCode}
                 onUpdate={() => { void handleUpdate(); }}
@@ -3072,6 +3097,8 @@ export default function App() {
                 onMount={strudel.setRoot}
                 onPlay={handlePlay}
                 onPause={strudel.pause}
+                playbackMode={strudel.playbackMode}
+                onTogglePlaybackMode={strudel.togglePlaybackMode}
                 isDirty={strudel.isDirty}
                 activeCode={strudel.activeCode}
                 onUpdate={() => { void handleUpdate(); }}
