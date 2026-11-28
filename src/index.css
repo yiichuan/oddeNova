@@ -1478,6 +1478,32 @@ html[data-theme='light'] .favorites-confirm-delete {
   );
 }
 
+/* Keep the play glyph in place for brief starts. Show the spinner only once
+   loading has lasted long enough to warrant a separate visual state. */
+.code-panel-play-glyph-loading {
+  animation: codePanelPlayGlyphOut 80ms ease-out 180ms forwards;
+}
+
+.code-panel-play-spinner {
+  opacity: 0;
+  animation: codePanelPlaySpinnerIn 80ms ease-out 180ms forwards;
+}
+
+@keyframes codePanelPlayGlyphOut {
+  to { opacity: 0; }
+}
+
+@keyframes codePanelPlaySpinnerIn {
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-panel-play-glyph-loading,
+  .code-panel-play-spinner {
+    animation-duration: 0ms;
+  }
+}
+
 /* Update appears mid-playback, the moment an edit outruns the sound. Fading it
    in over its own width keeps that from reading as a jump in a bar that is
    otherwise still. Nothing animates it out: after a click the swap is done,

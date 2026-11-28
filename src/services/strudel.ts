@@ -4,6 +4,7 @@ import { emitTelemetry, markTelemetryError } from '../lib/telemetry';
 import { renderOfflineAudio } from '../lib/offline-render';
 import { isAbortError, getErrorMessage, waitForRetryDelay } from '../lib/errors';
 import { t } from '../lib/i18n';
+import { getStrudelLoopCycles } from '../lib/strudel-timing';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
 import { loadSampleIndex } from '../lib/sample-index-hosts';
@@ -115,7 +116,20 @@ interface ExportMeasurements {
   recovery_outcome: 'not_required' | 'success' | 'failed';
 }
 
+export type PlaybackMode = 'loop' | 'once';
+
+const PLAYBACK_MODE_STORAGE_KEY = 'vibe_playback_mode';
+
+function readPlaybackMode(): PlaybackMode {
+  try {
+    return window.localStorage.getItem(PLAYBACK_MODE_STORAGE_KEY) === 'once' ? 'once' : 'loop';
+  } catch {
+    return 'loop';
+  }
+}
+
 export type StrudelState = {
+  playbackMode: PlaybackMode;
   code: string;
   isPlaying: boolean;
   isPaused: boolean;
@@ -146,8 +160,7 @@ export type StrudelState = {
    */
   accentColor: string | null;
   /**
-   * A press of play is loading what the piece opens with, and the transport
-   * has not started yet. See `StrudelService.loadOpening`.
+   * A press of play is preparing the piece and the transport has not started yet.
    */
   isStarting: boolean;
 };
@@ -379,11 +392,15 @@ export class StrudelService {
   private currentMasterVolume = 1;
   private currentMasterLpfHz = 20000;
   private pendingSeekCycle: number | null = null;
+  private singlePlaybackEnd: number | null = null;
+  private singlePlaybackTimer: ReturnType<typeof setInterval> | undefined;
+  private isOnboardingPlayback = false;
   /* Bumped by every press of play and every stop, so a press still loading
      its opening knows when it has been overtaken and must not start. */
   private playToken = 0;
   private pageAudioRecovery: PageAudioRecovery | null = null;
   private _state: StrudelState = {
+    playbackMode: readPlaybackMode(),
     code: '',
     activeCode: '',
     isPlaying: false,
@@ -438,6 +455,13 @@ export class StrudelService {
   private notify(partial: Partial<StrudelState>): void {
     const previous = this._state;
     this._state = { ...this._state, ...partial };
+    if (
+      previous.isPlaying !== this._state.isPlaying ||
+      previous.activeCode !== this._state.activeCode ||
+      previous.playbackMode !== this._state.playbackMode
+    ) {
+      this.syncSinglePlayback();
+    }
     this.playbackTelemetry.observe(previous, this._state);
     if (partial.engineStatus && partial.engineStatus !== previous.engineStatus && partial.engineStatus !== 'initializing') {
       emitTelemetry('engine_initialization_finished', {
@@ -649,7 +673,12 @@ export class StrudelService {
       } else {
         const { webaudioOutput } = await import('@strudel/webaudio');
         const { getAudioContext } = await import('superdough');
-        defaultOutput = webaudioOutput;
+        defaultOutput = (hap: StrudelHap, deadline: number, duration: number, cps: number, time: number) => {
+          // Cyclist sends events ahead of the audio clock. Drop the next
+          // pass's onsets even before the transport reaches the stop point.
+          if (this.singlePlaybackEnd !== null && Number(hap.whole?.begin) >= this.singlePlaybackEnd) return;
+          return webaudioOutput(hap, deadline, duration, cps, time);
+        };
         getTimeFn = () => getAudioContext().currentTime;
       }
 
@@ -749,6 +778,7 @@ export class StrudelService {
             code: nextCode,
             activeCode: nextActiveCode,
             isPlaying: state.started ?? false,
+            isStarting: !state.started && this._state.isStarting,
             isPaused: didCodeChange || state.started ? false : this._state.isPaused,
             isDirty: state.isDirty ?? false,
             error,
@@ -1128,6 +1158,40 @@ export class StrudelService {
     }
   };
 
+  get playbackMode(): PlaybackMode {
+    return this._state.playbackMode;
+  }
+
+  togglePlaybackMode = (): void => {
+    const playbackMode = this.playbackMode === 'loop' ? 'once' : 'loop';
+    try {
+      window.localStorage.setItem(PLAYBACK_MODE_STORAGE_KEY, playbackMode);
+    } catch {
+      // The current page can still switch modes when storage is unavailable.
+    }
+    this.notify({ playbackMode });
+  };
+
+  private syncSinglePlayback(): void {
+    const code = this._state.activeCode || this._state.code;
+    if (!this._state.isPlaying || this._state.playbackMode === 'loop' || this.isOnboardingPlayback || !code.trim()) {
+      this.singlePlaybackEnd = null;
+      clearInterval(this.singlePlaybackTimer);
+      this.singlePlaybackTimer = undefined;
+      return;
+    }
+
+    const loopCycles = getStrudelLoopCycles(code) || 1;
+    const cycle = this.pendingSeekCycle ?? this.getPlaybackCycle() ?? 0;
+    this.singlePlaybackEnd = (Math.floor(cycle / loopCycles) + 1) * loopCycles;
+    this.singlePlaybackTimer ??= setInterval(() => {
+      const playhead = this.getPlaybackCycle();
+      if (this.singlePlaybackEnd !== null && playhead !== null && playhead >= this.singlePlaybackEnd) {
+        this.stop();
+      }
+    }, 25);
+  }
+
   seekPlayback = (progress: number, loopCycles: number): boolean => {
     const targetCycle = seekTargetCycle(progress, loopCycles);
     if (targetCycle === null) return false;
@@ -1137,7 +1201,9 @@ export class StrudelService {
       return true;
     }
 
-    return applySeekCycle(this.editorInstance?.repl.scheduler, targetCycle);
+    const seeked = applySeekCycle(this.editorInstance?.repl.scheduler, targetCycle);
+    if (seeked && this.singlePlaybackEnd !== null) this.singlePlaybackEnd = loopCycles;
+    return seeked;
   };
 
   /**
@@ -1185,6 +1251,9 @@ export class StrudelService {
     const currentCycle = scheduler.now?.();
     if (Number.isFinite(currentCycle)) this.pendingSeekCycle = currentCycle as number;
 
+    // The scheduler reports a stop synchronously. Publish the pause intent
+    // first so observers never rewind between playing and paused.
+    this.notify({ isPlaying: false, isPaused: true });
     if (typeof scheduler.pause === 'function') scheduler.pause();
     else if (typeof scheduler.stop === 'function') scheduler.stop();
     else this.editorInstance?.repl.stop();
@@ -1200,8 +1269,6 @@ export class StrudelService {
     // The accent is a playback-only read: paused is not playing, so it steps
     // back to the studio's own orange until `play()` resumes and re-latches.
     this.panelAccent?.reset();
-
-    this.notify({ isPlaying: false, isPaused: true });
     return true;
   };
 
@@ -1227,7 +1294,11 @@ export class StrudelService {
     // that resolved without throwing started the transport, so take that.
     const playing = typeof started === 'boolean' ? started : true;
     if (playing === this._state.isPlaying && !(playing && this._state.isPaused)) return;
-    this.notify({ isPlaying: playing, isPaused: playing ? false : this._state.isPaused });
+    this.notify({
+      isPlaying: playing,
+      isPaused: playing ? false : this._state.isPaused,
+      isStarting: playing ? false : this._state.isStarting,
+    });
   }
 
   play = async (source: PlaybackSource = 'manual', context = analyticsContext(undefined, undefined, this.code)): Promise<void> => {
@@ -1237,6 +1308,9 @@ export class StrudelService {
       throw new Error('Engine not initialized');
     }
     const token = ++this.playToken;
+    const wasOnboardingPlayback = this.isOnboardingPlayback;
+    this.isOnboardingPlayback = source === 'onboarding';
+    if (this.isOnboardingPlayback !== wasOnboardingPlayback) this.syncSinglePlayback();
     // One transport at a time: a featured audition stops here.
     claimTransport('studio', this.stop);
     // Hand the panel back to oddeNova's palette before evaluating, so the code
@@ -1252,10 +1326,11 @@ export class StrudelService {
     // frame this evaluate() produces, rather than carrying over a colour a
     // piece that changed since the last play() may no longer set.
     this.panelAccent?.reset();
-    this.notify({ error: null });
+    this.notify({ error: null, isStarting: !this._state.isPlaying });
     try {
       await this.ensurePlayableAudioGraph();
-      await this.loadOpening(token);
+      if (token !== this.playToken) return;
+      await this.loadOpening();
       // Stopped, or pressed again, while the opening loaded.
       if (token !== this.playToken || !this.editorInstance) return;
       await this.editorInstance.evaluate();
@@ -1288,6 +1363,8 @@ export class StrudelService {
       this.notify({ error: message });
       this.playbackTelemetry.finish('startup_failed', playback, error);
       throw error;
+    } finally {
+      if (token === this.playToken && this._state.isStarting) this.notify({ isStarting: false });
     }
   };
 
@@ -1306,13 +1383,12 @@ export class StrudelService {
    * late is still better than a press that does nothing. Skipped while a piece
    * is already sounding — compiling would swap the new pattern in under it.
    */
-  private loadOpening = async (token: number): Promise<void> => {
+  private loadOpening = async (): Promise<void> => {
     if (this._isVideoMode) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const repl = this.editorInstance?.repl as any;
     if (typeof repl?.evaluate !== 'function' || repl.scheduler?.started) return;
 
-    this.notify({ isStarting: true });
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
@@ -1323,7 +1399,6 @@ export class StrudelService {
       // A piece that fails to compile fails again, out loud, in evaluate().
     } finally {
       clearTimeout(timer);
-      if (token === this.playToken) this.notify({ isStarting: false });
     }
   };
 

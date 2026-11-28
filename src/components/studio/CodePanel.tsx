@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentPropsWithoutRef, type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   DownloadIcon,
@@ -8,11 +8,13 @@ import {
   PauseIcon,
   PlayIcon,
   PlayStartingMark,
+  LoopPlaybackIcon,
+  SinglePlaybackIcon,
   UpdateIcon,
   VolumeIcon,
 } from '../icons';
 import { t } from '../../lib/i18n';
-import { strudelService } from '../../services/strudel';
+import { strudelService, type PlaybackMode } from '../../services/strudel';
 import { isDemoMode } from '../../demo/demo-config';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useScrollActivity } from '../../hooks/useScrollActivity';
@@ -64,6 +66,8 @@ interface CodePanelProps {
   onMount: (el: HTMLDivElement) => void;
   onPlay: () => void;
   onPause: () => void;
+  playbackMode: PlaybackMode;
+  onTogglePlaybackMode: () => void;
   /**
    * The editor holds an edit the sounding pattern hasn't heard yet
    * (`StrudelState.isDirty`). Together with `isPlaying` this is what puts the
@@ -263,6 +267,114 @@ function ControlsLightField({ idPrefix }: { idPrefix: string }) {
   );
 }
 
+function PlaybackKeyGlyph({ isPlaying, isStarting, size }: {
+  isPlaying: boolean;
+  isStarting: boolean;
+  size: number;
+}) {
+  const glyphClass = isPlaying
+    ? 'col-start-1 row-start-1 transition-opacity duration-100 motion-reduce:transition-none'
+    : 'col-start-1 row-start-1';
+
+  return (
+    <span aria-hidden="true" className="grid place-items-center">
+      <PlayIcon
+        size={size}
+        className={`${glyphClass} ${isPlaying ? 'opacity-0' : isStarting ? 'code-panel-play-glyph-loading' : ''}`}
+      />
+      <PauseIcon size={size} className={`${glyphClass} ${isPlaying ? '' : 'opacity-0'}`} />
+      {isStarting && !isPlaying && (
+        <span className="code-panel-play-spinner col-start-1 row-start-1">
+          <PlayStartingMark size={size - 2} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+const PLAY_KEY_TOOLTIP_DELAY_MS = 1000;
+
+function PlaybackControlButton({
+  label,
+  shortcutLabel,
+  hoverDelayMs = 0,
+  children,
+  ...buttonProps
+}: ComponentPropsWithoutRef<'button'> & { label: string; shortcutLabel?: string; hoverDelayMs?: number }) {
+  const [pointerAnchor, setPointerAnchor] = useState<ControlHoverLabelAnchor | null>(null);
+  const [focusAnchor, setFocusAnchor] = useState<ControlHoverLabelAnchor | null>(null);
+  const pointerTimer = useRef<number | undefined>(undefined);
+  const cancelPointerReveal = useCallback(() => {
+    window.clearTimeout(pointerTimer.current);
+    pointerTimer.current = undefined;
+  }, []);
+
+  useEffect(() => cancelPointerReveal, [cancelPointerReveal]);
+
+  return (
+    <>
+      <button
+        type="button"
+        {...buttonProps}
+        aria-label={label}
+        onPointerEnter={(event) => {
+          if (event.pointerType === 'touch') return;
+          const button = event.currentTarget;
+          cancelPointerReveal();
+          if (hoverDelayMs === 0) {
+            setPointerAnchor(anchorAbove(button));
+          } else {
+            pointerTimer.current = window.setTimeout(() => {
+              pointerTimer.current = undefined;
+              setPointerAnchor(anchorAbove(button));
+            }, hoverDelayMs);
+          }
+        }}
+        onPointerLeave={() => {
+          cancelPointerReveal();
+          setPointerAnchor(null);
+        }}
+        onFocus={(event) => {
+          if (event.currentTarget.matches(':focus-visible')) setFocusAnchor(anchorAbove(event.currentTarget));
+        }}
+        onBlur={() => setFocusAnchor(null)}
+      >
+        {children}
+      </button>
+      <ControlHoverLabel anchor={pointerAnchor ?? focusAnchor} label={label} shortcutLabel={shortcutLabel} />
+    </>
+  );
+}
+
+function PlaybackModeButton({
+  mode,
+  onToggle,
+  mobile = false,
+}: {
+  mode: PlaybackMode;
+  onToggle: () => void;
+  mobile?: boolean;
+}) {
+  const label = t(mode === 'loop' ? 'playbackLoop' : 'playbackOnce');
+  const Icon = mode === 'loop' ? LoopPlaybackIcon : SinglePlaybackIcon;
+  const size = mobile ? 'ml-1 h-7 w-7 text-action-fill' : 'h-8 w-8 text-control-icon hover:text-control-icon-hover';
+
+  return (
+    <PlaybackControlButton
+      label={label}
+      onClick={(event) => {
+        // A pointer click should leave Space available to the studio transport.
+        // Keyboard activation keeps focus on this button.
+        if (event.detail > 0) event.currentTarget.blur();
+        onToggle();
+      }}
+      className={`control-button-surface flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors ${size}`}
+    >
+      <Icon size={mobile ? 13 : 16} />
+    </PlaybackControlButton>
+  );
+}
+
 function PlaybackProgress({
   code,
   isPlaying,
@@ -437,6 +549,8 @@ export default function CodePanel({
   activeCode = '',
   onPlay,
   onPause,
+  playbackMode,
+  onTogglePlaybackMode,
   onUpdate,
   onEditorFocusChange,
   vizEnabled = true,
@@ -656,8 +770,9 @@ export default function CodePanel({
   // Pausing is always open, except to the guide's listen (see `guidePlay`).
   const playKeyDisabled = isPlaying
     ? Boolean(guidePlay)
-    : !engineReady || !hasPlayableCode || isStarting || Boolean(guidePlay?.playDisabled);
-  const playKeyLabel = isPlaying ? t('pause') : isStarting ? t('playStarting') : t('play');
+    : !engineReady || !hasPlayableCode || Boolean(guidePlay?.playDisabled);
+  const playKeyLabel = isPlaying ? t('pause') : t('play');
+  const playKeyShortcut = !playKeyDisabled && !guidePlay ? t('spaceKey') : undefined;
   const actionDisabled = !engineReady || !hasPlayableCode || exportState.status === 'exporting';
   // Only a playing piece with an unheard edit has anything to update into.
   const canUpdate = isPlaying && isDirty;
@@ -818,16 +933,22 @@ export default function CodePanel({
             className="code-panel-transport relative z-10 flex items-center justify-center py-[6px]"
             style={{ marginLeft: 'var(--code-panel-play-button-offset)' }}
           >
-            <button
+            <PlaybackControlButton
               onClick={handlePlayClick}
               data-onboarding-target="play"
-              disabled={!isPlaying && (!engineReady || !hasPlayableCode || isStarting)}
+              disabled={playKeyDisabled}
               className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-control-icon transition-colors hover:text-control-icon-hover disabled:cursor-not-allowed disabled:text-control-icon-disabled disabled:opacity-100"
-              aria-label={playKeyLabel}
+              label={playKeyLabel}
+              shortcutLabel={playKeyShortcut}
+              hoverDelayMs={PLAY_KEY_TOOLTIP_DELAY_MS}
+              aria-keyshortcuts={playKeyShortcut ? 'Space' : undefined}
               aria-busy={isStarting || undefined}
+              aria-disabled={isStarting || undefined}
             >
-              {isPlaying ? <PauseIcon size={16} /> : isStarting ? <PlayStartingMark size={14} /> : <PlayIcon size={18} />}
-            </button>
+              <PlaybackKeyGlyph isPlaying={isPlaying} isStarting={isStarting} size={16} />
+            </PlaybackControlButton>
+
+            <PlaybackModeButton mode={playbackMode} onToggle={onTogglePlaybackMode} />
 
             {/* Live update: re-evaluates the edited code into the pattern that
                 is already running, so a change lands on the next cycle instead
@@ -1053,19 +1174,26 @@ export default function CodePanel({
               play key's widened reach wins the few pixels it shares with the
               seek track's start. */}
           <div className={`relative ${guidePlay ? 'z-20' : 'z-10'} flex shrink-0 items-center`}>
-            <button
-              type="button"
+            <PlaybackControlButton
               onClick={handlePlayClick}
               data-onboarding-target="play"
               disabled={playKeyDisabled}
               className={`control-button-surface flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed ${
                 playKeyDisabled ? 'text-text-muted' : 'text-action-fill'
               }${guidePlay ? " relative before:absolute before:-inset-2 before:content-['']" : ''}`}
-              aria-label={playKeyLabel}
+              label={playKeyLabel}
+              shortcutLabel={playKeyShortcut}
+              hoverDelayMs={PLAY_KEY_TOOLTIP_DELAY_MS}
+              aria-keyshortcuts={playKeyShortcut ? 'Space' : undefined}
               aria-busy={isStarting || undefined}
+              aria-disabled={isStarting || undefined}
             >
-              {isPlaying ? <PauseIcon size={12} /> : isStarting ? <PlayStartingMark size={11} /> : <PlayIcon size={13} />}
-            </button>
+              <PlaybackKeyGlyph isPlaying={isPlaying} isStarting={isStarting} size={13} />
+            </PlaybackControlButton>
+
+            {!guidePlay && (
+              <PlaybackModeButton mode={playbackMode} onToggle={onTogglePlaybackMode} mobile />
+            )}
 
             {/* Same condition as the desktop bar: a piece is sounding and the
                 editor holds an edit it hasn't heard. The pair reads as one
